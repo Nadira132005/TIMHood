@@ -8,6 +8,11 @@ export const neighborhoodsController = {
     return res.status(200).json(result);
   },
 
+  async resolveAddress(req: Request, res: Response): Promise<Response> {
+    const result = await neighborhoodsService.resolveAddress(String(req.body?.addressLabel ?? ''));
+    return res.status(200).json(result);
+  },
+
   async getMyNeighborhoodChat(req: Request, res: Response): Promise<Response> {
     const userId = req.auth?.userId;
     if (!userId) {

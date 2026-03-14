@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View 
 import { apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
+import { toImageUri } from '../../../shared/utils/images';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
@@ -46,7 +47,7 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
 
       <SectionCard title="Identity Profile">
         {profile.photoBase64 ? (
-          <Image source={{ uri: `data:image/jpeg;base64,${profile.photoBase64}` }} style={styles.avatar} />
+          <Image source={{ uri: toImageUri(profile.photoBase64)! }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarPlaceholderText}>

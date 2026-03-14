@@ -17,6 +17,7 @@ import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
   profile: FixedIdentityProfile;
@@ -217,7 +218,7 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
               <View key={message.id} style={[styles.messageRow, message.isOwnMessage && styles.messageRowOwn]}>
                 {!message.isOwnMessage ? (
                   message.userPhotoBase64 ? (
-                    <Image source={{ uri: `data:image/jpeg;base64,${message.userPhotoBase64}` }} style={styles.avatar} />
+                    <Image source={{ uri: toImageUri(message.userPhotoBase64)! }} style={styles.avatar} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
                       <Text style={styles.avatarText}>{message.userName.slice(0, 1)}</Text>

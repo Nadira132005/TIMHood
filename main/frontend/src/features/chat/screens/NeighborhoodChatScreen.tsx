@@ -18,6 +18,7 @@ import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
   profile: FixedIdentityProfile;
@@ -250,6 +251,10 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
       );
       setDirectChat(response);
       setDirectChatTarget(selectedMessage);
+      setSelectedMessage(null);
+      setPublicProfile(null);
+      setRelationship('none');
+      setError(null);
     } catch (chatError) {
       setError(chatError instanceof Error ? chatError.message : 'Unable to open private chat.');
     }
@@ -295,6 +300,15 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
     setSelectedMessage(null);
     setPublicProfile(null);
     setRelationship('none');
+    setError(null);
+  }
+
+  function closeDirectChat() {
+    setDirectChat(null);
+    setDirectChatTarget(null);
+    setText('');
+    setImageBase64(null);
+    setError(null);
   }
 
   const showingDirectChat = Boolean(directChat && directChatTarget);
@@ -304,7 +318,7 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
       <TopBar
         title={showingDirectChat ? directChatTarget?.userName || 'Private Chat' : data?.neighborhood.name || 'Neighborhood Chat'}
         leftActionLabel="Back"
-        onLeftAction={showingDirectChat ? () => setDirectChat(null) : onBack}
+        onLeftAction={showingDirectChat ? closeDirectChat : onBack}
       />
 
       {busy ? (
@@ -355,7 +369,7 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
               >
                 {!message.isOwnMessage ? (
                   message.userPhotoBase64 ? (
-                    <Image source={{ uri: `data:image/jpeg;base64,${message.userPhotoBase64}` }} style={styles.avatar} />
+                    <Image source={{ uri: toImageUri(message.userPhotoBase64)! }} style={styles.avatar} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
                       <Text style={styles.avatarText}>{message.userName.slice(0, 1)}</Text>
@@ -395,7 +409,7 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{publicProfile.fullName}</Text>
             {publicProfile.photoBase64 ? (
-              <Image source={{ uri: `data:image/jpeg;base64,${publicProfile.photoBase64}` }} style={styles.profilePhoto} />
+              <Image source={{ uri: toImageUri(publicProfile.photoBase64)! }} style={styles.profilePhoto} />
             ) : null}
             <Text style={styles.sheetText}>Age: {publicProfile.age ?? 'Unknown'}</Text>
             <Text style={styles.sheetText}>Neighborhood: {publicProfile.neighborhood || 'Unknown'}</Text>

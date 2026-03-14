@@ -1,3 +1,5 @@
+import { resolveNeighborhoodSeedByPoint } from '../neighborhoods/neighborhoods.data';
+
 type GeoPoint = {
   type: 'Point';
   coordinates: [number, number];
@@ -5,13 +7,13 @@ type GeoPoint = {
 
 type NeighborhoodResolution = {
   neighborhood: string | null;
-  resolutionMode: 'pending_dataset';
+  resolutionMode: 'polygon_match' | 'outside_dataset';
 };
 
-// Placeholder until we import the official Timisoara neighborhood polygons.
-export function resolveNeighborhood(_point: GeoPoint): NeighborhoodResolution {
+export function resolveNeighborhood(point: GeoPoint): NeighborhoodResolution {
+  const matched = resolveNeighborhoodSeedByPoint(point.coordinates);
   return {
-    neighborhood: null,
-    resolutionMode: 'pending_dataset'
+    neighborhood: matched?.name || null,
+    resolutionMode: matched ? 'polygon_match' : 'outside_dataset'
   };
 }

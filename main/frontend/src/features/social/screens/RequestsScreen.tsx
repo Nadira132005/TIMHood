@@ -7,6 +7,7 @@ import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
   profile: FixedIdentityProfile;
@@ -96,7 +97,7 @@ export function RequestsScreen({ profile, onBack }: Props) {
               friendRequests.map((request) => (
                 <View key={request.fromUserId} style={styles.row}>
                   {request.photoBase64 ? (
-                    <Image source={{ uri: `data:image/jpeg;base64,${request.photoBase64}` }} style={styles.avatar} />
+                    <Image source={{ uri: toImageUri(request.photoBase64)! }} style={styles.avatar} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
                       <Text style={styles.avatarText}>{request.fullName.slice(0, 1)}</Text>

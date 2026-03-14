@@ -1,3 +1,23 @@
+import fs from 'fs';
+import path from 'path';
+
+type FeatureCollection = {
+  type: 'FeatureCollection';
+  features: Array<{
+    geometryId: number;
+    attributes: {
+      db_id: number;
+      Eticheta: string;
+    };
+    geometry: {
+      type: 'Polygon';
+      coordinates: number[][][];
+    };
+  }>;
+};
+
+export type LngLat = [number, number];
+
 export type NeighborhoodSeed = {
   id: string;
   name: string;
@@ -7,234 +27,141 @@ export type NeighborhoodSeed = {
   mapLeft: number;
   mapWidth: number;
   mapHeight: number;
+  polygons: LngLat[][];
+  center: LngLat;
 };
 
-export const TIMISOARA_NEIGHBORHOODS: NeighborhoodSeed[] = [
-  {
-    id: 'mehala',
-    name: 'Mehala',
-    slug: 'mehala',
-    description: 'Zona istorica din partea de nord-vest a orasului.',
-    mapTop: 16,
-    mapLeft: 24,
-    mapWidth: 92,
-    mapHeight: 58
-  },
-  {
-    id: 'aradului',
-    name: 'Aradului',
-    slug: 'aradului',
-    description: 'Cartierul din nord, spre Calea Aradului.',
-    mapTop: 24,
-    mapLeft: 132,
-    mapWidth: 94,
-    mapHeight: 54
-  },
-  {
-    id: 'circumvalatiunii',
-    name: 'Circumvalatiunii',
-    slug: 'circumvalatiunii',
-    description: 'Zona centrala-nordica de locuire densa.',
-    mapTop: 84,
-    mapLeft: 84,
-    mapWidth: 112,
-    mapHeight: 52
-  },
-  {
-    id: 'cetate',
-    name: 'Cetate',
-    slug: 'cetate',
-    description: 'Centrul istoric al Timisoarei.',
-    mapTop: 142,
-    mapLeft: 114,
-    mapWidth: 86,
-    mapHeight: 48
-  },
-  {
-    id: 'iosefin',
-    name: 'Iosefin',
-    slug: 'iosefin',
-    description: 'Cartierul vestic al orasului, spre gara.',
-    mapTop: 198,
-    mapLeft: 48,
-    mapWidth: 94,
-    mapHeight: 56
-  },
-  {
-    id: 'elisabetin',
-    name: 'Elisabetin',
-    slug: 'elisabetin',
-    description: 'Zona rezidentiala dintre centru si sud.',
-    mapTop: 206,
-    mapLeft: 150,
-    mapWidth: 92,
-    mapHeight: 58
-  },
-  {
-    id: 'fabric',
-    name: 'Fabric',
-    slug: 'fabric',
-    description: 'Cartierul din est, cu zona istorica si artere comerciale.',
-    mapTop: 148,
-    mapLeft: 214,
-    mapWidth: 88,
-    mapHeight: 58
-  },
-  {
-    id: 'dacia',
-    name: 'Dacia',
-    slug: 'dacia',
-    description: 'Zona nord-estica dintre centru si Lipovei.',
-    mapTop: 82,
-    mapLeft: 214,
-    mapWidth: 84,
-    mapHeight: 50
-  },
-  {
-    id: 'lipovei',
-    name: 'Lipovei',
-    slug: 'lipovei',
-    description: 'Cartierul din nord-est al orasului.',
-    mapTop: 28,
-    mapLeft: 238,
-    mapWidth: 86,
-    mapHeight: 48
-  },
-  {
-    id: 'soarelui',
-    name: 'Soarelui',
-    slug: 'soarelui',
-    description: 'Zona sud-estica cu blocuri si legaturi spre bulevardele mari.',
-    mapTop: 274,
-    mapLeft: 176,
-    mapWidth: 100,
-    mapHeight: 54
-  },
-  {
-    id: 'girocului',
-    name: 'Girocului',
-    slug: 'girocului',
-    description: 'Cartierul sudic spre Calea Martirilor si Giroc.',
-    mapTop: 268,
-    mapLeft: 68,
-    mapWidth: 96,
-    mapHeight: 58
-  },
-  {
-    id: 'braytim',
-    name: 'Braytim',
-    slug: 'braytim',
-    description: 'Zona rezidentiala din extremitatea de sud-est.',
-    mapTop: 338,
-    mapLeft: 188,
-    mapWidth: 96,
-    mapHeight: 54
-  },
-  {
-    id: 'dambovita',
-    name: 'Dambovita',
-    slug: 'dambovita',
-    description: 'Cartierul sud-vestic din jurul Caii Sagului si al bulevardelor largi.',
-    mapTop: 292,
-    mapLeft: 10,
-    mapWidth: 88,
-    mapHeight: 52
-  },
-  {
-    id: 'calea-sagului',
-    name: 'Calea Sagului',
-    slug: 'calea-sagului',
-    description: 'Zona de sud-vest dezvoltata in jurul Caii Sagului.',
-    mapTop: 350,
-    mapLeft: 18,
-    mapWidth: 110,
-    mapHeight: 54
-  },
-  {
-    id: 'odobescu',
-    name: 'Odobescu',
-    slug: 'odobescu',
-    description: 'Zona adiacenta Iosefinului si axelor rezidentiale spre sud-vest.',
-    mapTop: 244,
-    mapLeft: 24,
-    mapWidth: 80,
-    mapHeight: 42
-  },
-  {
-    id: 'tipografilor',
-    name: 'Tipografilor',
-    slug: 'tipografilor',
-    description: 'Zona est-centrala dintre Fabric si arterele spre nord.',
-    mapTop: 108,
-    mapLeft: 256,
-    mapWidth: 78,
-    mapHeight: 40
-  },
-  {
-    id: 'calea-martirilor',
-    name: 'Calea Martirilor',
-    slug: 'calea-martirilor',
-    description: 'Zona sudica dezvoltata de-a lungul Caii Martirilor.',
-    mapTop: 326,
-    mapLeft: 110,
-    mapWidth: 98,
-    mapHeight: 46
-  },
-  {
-    id: 'steaua',
-    name: 'Steaua',
-    slug: 'steaua',
-    description: 'Cartierul din sud-vest mentionat frecvent in interventiile municipale.',
-    mapTop: 382,
-    mapLeft: 74,
-    mapWidth: 94,
-    mapHeight: 46
-  },
-  {
-    id: 'complexul-studentesc',
-    name: 'Complexul Studentesc',
-    slug: 'complexul-studentesc',
-    description: 'Zona universitara cu camine, servicii si viata de noapte.',
-    mapTop: 210,
-    mapLeft: 250,
-    mapWidth: 92,
-    mapHeight: 46
-  },
-  {
-    id: 'torontalului',
-    name: 'Torontalului',
-    slug: 'torontalului',
-    description: 'Zona nord-vestica spre Calea Torontalului.',
-    mapTop: 18,
-    mapLeft: 86,
-    mapWidth: 90,
-    mapHeight: 42
-  },
-  {
-    id: 'stadion',
-    name: 'Stadion',
-    slug: 'stadion',
-    description: 'Zona din jurul stadionului si a arterelor estice apropiate.',
-    mapTop: 168,
-    mapLeft: 294,
-    mapWidth: 62,
-    mapHeight: 44
-  }
-];
+type Bounds = {
+  minLng: number;
+  maxLng: number;
+  minLat: number;
+  maxLat: number;
+};
+
+let cachedSeeds: NeighborhoodSeed[] | null = null;
+
+function buildSlug(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
 
 function normalizeNeighborhoodName(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[+/_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 }
 
+function prettifyLabel(value: string): string {
+  return value
+    .replace(/\+/g, ' + ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function readDataset(): FeatureCollection {
+  const filePath = path.resolve(__dirname, '../../../neighbourhoods.json');
+  return JSON.parse(fs.readFileSync(filePath, 'utf8')) as FeatureCollection;
+}
+
+function getBoundsFromRing(ring: LngLat[]): Bounds {
+  return ring.reduce<Bounds>(
+    (acc, [lng, lat]) => ({
+      minLng: Math.min(acc.minLng, lng),
+      maxLng: Math.max(acc.maxLng, lng),
+      minLat: Math.min(acc.minLat, lat),
+      maxLat: Math.max(acc.maxLat, lat)
+    }),
+    {
+      minLng: Number.POSITIVE_INFINITY,
+      maxLng: Number.NEGATIVE_INFINITY,
+      minLat: Number.POSITIVE_INFINITY,
+      maxLat: Number.NEGATIVE_INFINITY
+    }
+  );
+}
+
+function pointInRing([lng, lat]: LngLat, ring: LngLat[]): boolean {
+  let inside = false;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [lngI, latI] = ring[i];
+    const [lngJ, latJ] = ring[j];
+    const intersects =
+      latI > lat !== latJ > lat &&
+      lng < ((lngJ - lngI) * (lat - latI)) / ((latJ - latI) || Number.EPSILON) + lngI;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function buildSeeds(): NeighborhoodSeed[] {
+  const dataset = readDataset();
+  const allCoordinates = dataset.features.flatMap((feature) => feature.geometry.coordinates.flat());
+  const cityBounds = getBoundsFromRing(allCoordinates as LngLat[]);
+  const cityWidth = cityBounds.maxLng - cityBounds.minLng || 1;
+  const cityHeight = cityBounds.maxLat - cityBounds.minLat || 1;
+
+  return dataset.features.map((feature) => {
+    const name = prettifyLabel(feature.attributes.Eticheta);
+    const slug = buildSlug(name);
+    const polygons = feature.geometry.coordinates.map((ring) => ring.map(([lng, lat]) => [lng, lat] as LngLat));
+    const outerRing = polygons[0] || [];
+    const bounds = getBoundsFromRing(outerRing);
+
+    return {
+      id: String(feature.attributes.db_id),
+      name,
+      slug,
+      description: `Cartierul ${name} din Timisoara, conform hartii oficiale a municipiului.`,
+      mapTop: ((cityBounds.maxLat - bounds.maxLat) / cityHeight) * 100,
+      mapLeft: ((bounds.minLng - cityBounds.minLng) / cityWidth) * 100,
+      mapWidth: ((bounds.maxLng - bounds.minLng) / cityWidth) * 100,
+      mapHeight: ((bounds.maxLat - bounds.minLat) / cityHeight) * 100,
+      polygons,
+      center: [(bounds.minLng + bounds.maxLng) / 2, (bounds.minLat + bounds.maxLat) / 2]
+    };
+  });
+}
+
+export function getNeighborhoodSeeds(): NeighborhoodSeed[] {
+  if (!cachedSeeds) {
+    cachedSeeds = buildSeeds();
+  }
+
+  return cachedSeeds;
+}
+
 export function findNeighborhoodSeedByName(name: string): NeighborhoodSeed | null {
   const normalized = normalizeNeighborhoodName(name);
-  return TIMISOARA_NEIGHBORHOODS.find(
-    (neighborhood) =>
-      normalizeNeighborhoodName(neighborhood.name) === normalized ||
-      normalizeNeighborhoodName(neighborhood.slug) === normalized
-  ) || null;
+  return (
+    getNeighborhoodSeeds().find(
+      (neighborhood) =>
+        normalizeNeighborhoodName(neighborhood.name) === normalized ||
+        normalizeNeighborhoodName(neighborhood.slug) === normalized
+    ) || null
+  );
+}
+
+export function resolveNeighborhoodSeedByPoint(point: LngLat): NeighborhoodSeed | null {
+  for (const neighborhood of getNeighborhoodSeeds()) {
+    for (const ring of neighborhood.polygons) {
+      if (pointInRing(point, ring)) {
+        return neighborhood;
+      }
+    }
+  }
+
+  return null;
 }

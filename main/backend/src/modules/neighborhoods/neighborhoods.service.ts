@@ -1,6 +1,12 @@
 import { User } from '../identity/identity.model';
 import { HttpError } from '../../shared/utils/http-error';
-import { TIMISOARA_NEIGHBORHOODS, findNeighborhoodSeedByName } from './neighborhoods.data';
+import {
+  getNeighborhoodSeeds,
+  LngLat,
+  NeighborhoodSeed,
+  findNeighborhoodSeedByName,
+  resolveNeighborhoodSeedByPoint
+} from './neighborhoods.data';
 import { Neighborhood, NeighborhoodMessage } from './neighborhoods.model';
 
 type NeighborhoodListItem = {
@@ -13,6 +19,8 @@ type NeighborhoodListItem = {
   mapLeft: number;
   mapWidth: number;
   mapHeight: number;
+  polygons: LngLat[][];
+  center: LngLat;
 };
 
 type NeighborhoodChatMessage = {
@@ -38,6 +46,16 @@ type SendNeighborhoodMessagePayload = {
   imageBase64?: string;
 };
 
+type ResolveAddressResponse = {
+  addressLabel: string;
+  neighborhood: string | null;
+  location: {
+    type: 'Point';
+    coordinates: [number, number];
+  } | null;
+  resolutionMode: 'geocoded' | 'outside_dataset' | 'not_found';
+};
+
 function mapNeighborhood(doc: {
   _id: string;
   name: string;
@@ -49,6 +67,11 @@ function mapNeighborhood(doc: {
   map_width: number;
   map_height: number;
 }): NeighborhoodListItem {
+  const seed = findNeighborhoodSeedByName(doc.name);
+  if (!seed) {
+    throw new HttpError(500, `Neighborhood geometry is missing for ${doc.name}`);
+  }
+
   return {
     id: doc._id,
     name: doc.name,
@@ -58,30 +81,41 @@ function mapNeighborhood(doc: {
     mapTop: doc.map_top,
     mapLeft: doc.map_left,
     mapWidth: doc.map_width,
-    mapHeight: doc.map_height
+    mapHeight: doc.map_height,
+    polygons: seed.polygons,
+    center: seed.center
   };
 }
 
 async function ensureNeighborhoodsSeeded(): Promise<void> {
+  const seeds = getNeighborhoodSeeds();
+
   await Promise.all(
-    TIMISOARA_NEIGHBORHOODS.map((seed) =>
+    seeds.map((seed) =>
       Neighborhood.findOneAndUpdate(
-        { _id: seed.id },
         {
-          _id: seed.id,
-          name: seed.name,
-          slug: seed.slug,
-          description: seed.description,
-          source: 'https://harta.primariatm.ro/',
-          map_top: seed.mapTop,
-          map_left: seed.mapLeft,
-          map_width: seed.mapWidth,
-          map_height: seed.mapHeight
+          $or: [{ _id: seed.id }, { name: seed.name }, { slug: seed.slug }]
+        },
+        {
+          $set: {
+            name: seed.name,
+            slug: seed.slug,
+            description: seed.description,
+            source: 'https://harta.primariatm.ro/',
+            map_top: seed.mapTop,
+            map_left: seed.mapLeft,
+            map_width: seed.mapWidth,
+            map_height: seed.mapHeight
+          },
+          $setOnInsert: {
+            _id: seed.id
+          }
         },
         {
           upsert: true,
           new: true,
-          setDefaultsOnInsert: true
+          setDefaultsOnInsert: true,
+          runValidators: true
         }
       )
     )
@@ -95,12 +129,40 @@ async function getCanonicalNeighborhood(name: string) {
     throw new HttpError(400, 'Selected neighborhood is not supported');
   }
 
-  const neighborhood = await Neighborhood.findById(seed.id).lean();
+  const neighborhood = await Neighborhood.findOne({
+    $or: [{ _id: seed.id }, { name: seed.name }, { slug: seed.slug }]
+  }).lean();
   if (!neighborhood) {
     throw new HttpError(500, 'Neighborhood seed failed');
   }
 
   return neighborhood;
+}
+
+async function geocodeAddress(addressLabel: string): Promise<[number, number] | null> {
+  const searchUrl = new URL('https://nominatim.openstreetmap.org/search');
+  searchUrl.searchParams.set('format', 'jsonv2');
+  searchUrl.searchParams.set('limit', '1');
+  searchUrl.searchParams.set('countrycodes', 'ro');
+  searchUrl.searchParams.set('q', `${addressLabel}, Timisoara, Romania`);
+
+  const response = await fetch(searchUrl, {
+    headers: {
+      'User-Agent': 'TimHood/0.1 neighborhood resolver',
+      'Accept-Language': 'ro,en'
+    }
+  });
+
+  if (!response.ok) {
+    throw new HttpError(502, 'Unable to geocode address right now');
+  }
+
+  const results = (await response.json()) as Array<{ lon: string; lat: string }>;
+  if (!results.length) {
+    return null;
+  }
+
+  return [Number(results[0].lon), Number(results[0].lat)];
 }
 
 export const neighborhoodsService = {
@@ -113,6 +175,34 @@ export const neighborhoodsService = {
   async getCanonicalNeighborhoodName(name: string): Promise<string> {
     const neighborhood = await getCanonicalNeighborhood(name);
     return neighborhood.name;
+  },
+
+  async resolveAddress(addressLabel: string): Promise<ResolveAddressResponse> {
+    const trimmedAddress = addressLabel.trim();
+    if (!trimmedAddress) {
+      throw new HttpError(400, 'addressLabel is required');
+    }
+
+    const coordinates = await geocodeAddress(trimmedAddress);
+    if (!coordinates) {
+      return {
+        addressLabel: trimmedAddress,
+        neighborhood: null,
+        location: null,
+        resolutionMode: 'not_found'
+      };
+    }
+
+    const matched = resolveNeighborhoodSeedByPoint(coordinates);
+    return {
+      addressLabel: trimmedAddress,
+      neighborhood: matched?.name || null,
+      location: {
+        type: 'Point',
+        coordinates
+      },
+      resolutionMode: matched ? 'geocoded' : 'outside_dataset'
+    };
   },
 
   async getMyNeighborhoodChat(userId: string): Promise<NeighborhoodChatResponse> {

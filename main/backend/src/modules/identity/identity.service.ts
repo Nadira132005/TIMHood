@@ -79,7 +79,7 @@ type DemoLoginPayload = {
 
 type AddressOnboardingPayload = {
   addressLabel: string;
-  neighborhood: string;
+  neighborhood?: string;
   location?: {
     type: 'Point';
     coordinates: [number, number];
@@ -90,7 +90,7 @@ type AddressOnboardingResponse = {
   userId: string;
   addressLabel: string;
   neighborhood: string | null;
-  neighborhoodResolutionMode: 'manual_selection';
+  neighborhoodResolutionMode: 'manual_selection' | 'coordinate_resolution';
 };
 
 function hashDocumentNumber(documentNumber: string): string {
@@ -199,6 +199,20 @@ function getAge(dateOfBirth?: Date): number | undefined {
   return age;
 }
 
+function buildDemoAvatar(firstName: string, lastName: string, background: string): string {
+  const initials = `${firstName.slice(0, 1)}${lastName.slice(0, 1)}`.toUpperCase();
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+      <rect width="240" height="240" rx="40" fill="${background}" />
+      <circle cx="120" cy="88" r="40" fill="#F6E7D8" />
+      <path d="M52 212c10-42 42-66 68-66s58 24 68 66" fill="#F6E7D8" />
+      <text x="120" y="224" text-anchor="middle" font-family="Arial" font-size="28" font-weight="700" fill="#ffffff">${initials}</text>
+    </svg>
+  `.trim();
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 const DEMO_USERS: Record<
   string,
   {
@@ -212,6 +226,7 @@ const DEMO_USERS: Record<
     bio: string;
     homeAddressLabel: string;
     homeNeighborhood: string;
+    photoDataUri: string;
   }
 > = {
   '0000': {
@@ -224,7 +239,8 @@ const DEMO_USERS: Record<
     dateOfExpiry: '351231',
     bio: 'Coffee walks, school pickup coordination, and neighborhood updates.',
     homeAddressLabel: 'Aleea FC Ripensia 12',
-    homeNeighborhood: 'Soarelui'
+    homeNeighborhood: 'Soarelui',
+    photoDataUri: buildDemoAvatar('Mara', 'Popescu', '#A855F7')
   },
   '0001': {
     documentNumber: 'SOARELUI-DEMO-0001',
@@ -236,7 +252,8 @@ const DEMO_USERS: Record<
     dateOfExpiry: '351231',
     bio: 'Plays football on weekends and helps with small repairs.',
     homeAddressLabel: 'Strada Sirius 8',
-    homeNeighborhood: 'Soarelui'
+    homeNeighborhood: 'Soarelui',
+    photoDataUri: buildDemoAvatar('Andrei', 'Ionescu', '#0F766E')
   },
   '0002': {
     documentNumber: 'SOARELUI-DEMO-0002',
@@ -248,7 +265,8 @@ const DEMO_USERS: Record<
     dateOfExpiry: '351231',
     bio: 'Pet-friendly neighbor, marketplace regular, and event organizer.',
     homeAddressLabel: 'Bulevardul Sudului 18',
-    homeNeighborhood: 'Soarelui'
+    homeNeighborhood: 'Soarelui',
+    photoDataUri: buildDemoAvatar('Teodora', 'Marin', '#EA580C')
   }
 };
 
@@ -282,6 +300,7 @@ export const identityService = {
           issuing_state: demoUser.issuingState,
           date_of_birth: dateOfBirth,
           date_of_expiry: dateOfExpiry,
+          profile_photo_base64: demoUser.photoDataUri,
           bio: demoUser.bio,
           home_address_label: demoUser.homeAddressLabel,
           home_neighborhood: canonicalNeighborhood,
@@ -539,26 +558,17 @@ export const identityService = {
 
   async saveHomeAddress(userId: string, payload: AddressOnboardingPayload): Promise<AddressOnboardingResponse> {
     const addressLabel = payload.addressLabel.trim();
-    const neighborhood = payload.neighborhood.trim();
+    const neighborhood = payload.neighborhood?.trim() || '';
     if (!addressLabel) {
       throw new HttpError(400, 'addressLabel is required');
     }
 
-    if (!neighborhood) {
-      throw new HttpError(400, 'neighborhood is required');
-    }
-
-    const canonicalNeighborhood = await neighborhoodsService.getCanonicalNeighborhoodName(neighborhood);
+    let resolvedNeighborhoodFromPoint: string | null = null;
 
     const user = await User.findById(userId);
     if (!user) {
       throw new HttpError(404, 'User not found');
     }
-
-    user.home_address_label = addressLabel;
-    user.home_neighborhood = canonicalNeighborhood;
-    await user.save();
-    await communitiesService.ensureNeighborhoodGroupsForUser(userId, canonicalNeighborhood);
 
     if (payload.location) {
       if (
@@ -570,6 +580,7 @@ export const identityService = {
       }
 
       const resolverResult = resolveNeighborhood(payload.location);
+      resolvedNeighborhoodFromPoint = resolverResult.neighborhood;
       await UserLocation.findOneAndUpdate(
         { user_id: user._id },
         {
@@ -585,18 +596,25 @@ export const identityService = {
           setDefaultsOnInsert: true
         }
       ).lean();
-
-      if (!user.home_neighborhood && resolverResult.neighborhood) {
-        user.home_neighborhood = resolverResult.neighborhood;
-        await user.save();
-      }
     }
+
+    const effectiveNeighborhood = neighborhood || resolvedNeighborhoodFromPoint;
+    if (!effectiveNeighborhood) {
+      throw new HttpError(400, 'neighborhood is required');
+    }
+
+    const canonicalNeighborhood = await neighborhoodsService.getCanonicalNeighborhoodName(effectiveNeighborhood);
+
+    user.home_address_label = addressLabel;
+    user.home_neighborhood = canonicalNeighborhood;
+    await user.save();
+    await communitiesService.ensureNeighborhoodGroupsForUser(userId, canonicalNeighborhood);
 
     return {
       userId: user._id,
       addressLabel,
       neighborhood: user.home_neighborhood ?? canonicalNeighborhood,
-      neighborhoodResolutionMode: 'manual_selection'
+      neighborhoodResolutionMode: neighborhood ? 'manual_selection' : 'coordinate_resolution'
     };
   },
 

@@ -7,6 +7,7 @@ import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
   profile: FixedIdentityProfile;
@@ -270,7 +271,7 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
               <View key={member.userId} style={styles.memberRow}>
                 <Pressable style={styles.memberTapArea} onPress={() => openMemberActions(member)}>
                   {member.photoBase64 ? (
-                    <Image source={{ uri: `data:image/jpeg;base64,${member.photoBase64}` }} style={styles.avatar} />
+                    <Image source={{ uri: toImageUri(member.photoBase64)! }} style={styles.avatar} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
                       <Text style={styles.avatarText}>{member.fullName.slice(0, 1)}</Text>
@@ -323,7 +324,7 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{publicProfile.fullName}</Text>
             {publicProfile.photoBase64 ? (
-              <Image source={{ uri: `data:image/jpeg;base64,${publicProfile.photoBase64}` }} style={styles.profilePhoto} />
+              <Image source={{ uri: toImageUri(publicProfile.photoBase64)! }} style={styles.profilePhoto} />
             ) : null}
             <Text style={styles.sheetText}>Age: {publicProfile.age ?? 'Unknown'}</Text>
             <Text style={styles.sheetText}>Neighborhood: {publicProfile.neighborhood || 'Unknown'}</Text>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { apiPost } from '../../../shared/api/client';
+import { apiPost, getApiBaseUrl, saveApiBaseUrl } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
@@ -21,14 +21,39 @@ const DEMO_CANS = new Set(['0000', '0001', '0002']);
 
 export function LoginScreen({ onLogin }: Props) {
   const [can, setCan] = useState('');
+  const [backendUrl, setBackendUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    async function loadBackendUrl() {
+      try {
+        const url = await getApiBaseUrl();
+        if (mounted) {
+          setBackendUrl(url);
+        }
+      } catch {
+        if (mounted) {
+          setBackendUrl('http://127.0.0.1:4000/api');
+        }
+      }
+    }
+
+    void loadBackendUrl();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleReadCard() {
     setBusy(true);
     setError(null);
 
     try {
+      await saveApiBaseUrl(backendUrl);
       const response = DEMO_CANS.has(can)
         ? await apiPost<LoginResponse>('/identity/demo-login', { can })
         : await apiPost<LoginResponse>('/identity/nfc-login', await readIdentityCard(can));
@@ -52,6 +77,17 @@ export function LoginScreen({ onLogin }: Props) {
       </View>
 
       <SectionCard title="Read ID">
+        <Text style={styles.label}>Backend URL</Text>
+        <TextInput
+          value={backendUrl}
+          onChangeText={setBackendUrl}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="http://192.168.x.x:4000/api"
+          placeholderTextColor={colors.textMuted}
+          style={[styles.input, styles.backendInput]}
+          editable={!busy}
+        />
         <Text style={styles.label}>Card Access Number (CAN)</Text>
         <TextInput
           value={can}
@@ -76,6 +112,12 @@ export function LoginScreen({ onLogin }: Props) {
 
       <SectionCard title="Demo Users">
         <Text style={styles.bodyText}>Use `0000`, `0001`, or `0002` to sign in as seeded Soarelui demo users without NFC.</Text>
+      </SectionCard>
+
+      <SectionCard title="Phone Without USB">
+        <Text style={styles.bodyText}>
+          To make the app work after reopening without `adb reverse`, set the backend URL to your Mac LAN IP, for example `http://192.168.50.152:4000/api`.
+        </Text>
       </SectionCard>
 
       <SectionCard title="Device Requirement">
@@ -129,6 +171,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     backgroundColor: '#F9FBFC',
     marginBottom: spacing.md
+  },
+  backendInput: {
+    fontSize: 16
   },
   primaryButton: {
     backgroundColor: colors.primary,

@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   View
 } from 'react-native';
+import Svg, { Circle, Polygon } from 'react-native-svg';
 
 import { apiGet, apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
@@ -27,7 +28,7 @@ type AddressResponse = {
   userId: string;
   addressLabel: string;
   neighborhood: string | null;
-  neighborhoodResolutionMode: 'manual_selection';
+  neighborhoodResolutionMode: 'manual_selection' | 'coordinate_resolution';
 };
 
 type NeighborhoodOption = {
@@ -39,6 +40,18 @@ type NeighborhoodOption = {
   mapLeft: number;
   mapWidth: number;
   mapHeight: number;
+  polygons: Array<Array<[number, number]>>;
+  center: [number, number];
+};
+
+type ResolveAddressResponse = {
+  addressLabel: string;
+  neighborhood: string | null;
+  location: {
+    type: 'Point';
+    coordinates: [number, number];
+  } | null;
+  resolutionMode: 'geocoded' | 'outside_dataset' | 'not_found';
 };
 
 export function AddressScreen({ profile, onBack, onCompleted }: Props) {
@@ -48,15 +61,24 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodOption[]>([]);
   const [loadingNeighborhoods, setLoadingNeighborhoods] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapExpanded, setMapExpanded] = useState(false);
+  const [resolvedLocation, setResolvedLocation] = useState<[number, number] | null>(null);
+  const [resolutionMessage, setResolutionMessage] = useState<string | null>(null);
 
   const sortedNeighborhoods = [...neighborhoods].sort((a, b) => a.name.localeCompare(b.name));
-  const mapBaseWidth = 360;
-  const mapBaseHeight = 440;
-  const mapInnerWidth = Math.max(240, width - 64);
-  const mapScale = mapInnerWidth / mapBaseWidth;
-  const mapHeight = mapExpanded ? mapBaseHeight * mapScale * 1.15 : mapBaseHeight * mapScale;
+  const allPoints = neighborhoods.flatMap((item) => item.polygons.flat()).map(([lng, lat]) => [lng, -lat] as [number, number]);
+  const minX = allPoints.length ? Math.min(...allPoints.map(([x]) => x)) : 0;
+  const maxX = allPoints.length ? Math.max(...allPoints.map(([x]) => x)) : 100;
+  const minY = allPoints.length ? Math.min(...allPoints.map(([, y]) => y)) : 0;
+  const maxY = allPoints.length ? Math.max(...allPoints.map(([, y]) => y)) : 100;
+  const viewBoxPadding = 0.003;
+  const mapWidth = Math.max(280, width - 64);
+  const rawMapHeight = maxY - minY || 1;
+  const rawMapWidth = maxX - minX || 1;
+  const mapAspectRatio = rawMapHeight / rawMapWidth;
+  const mapHeight = mapExpanded ? mapWidth * Math.max(0.9, mapAspectRatio) : mapWidth * Math.max(0.65, mapAspectRatio);
 
   useEffect(() => {
     let mounted = true;
@@ -80,12 +102,48 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
       }
     }
 
-    loadNeighborhoods();
+    void loadNeighborhoods();
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  async function handleResolveAddress() {
+    const trimmedAddress = addressLabel.trim();
+    if (!trimmedAddress) {
+      setError('Enter the street or address first.');
+      return;
+    }
+
+    setResolving(true);
+    setError(null);
+
+    try {
+      const response = await apiPost<ResolveAddressResponse>(
+        '/neighborhoods/resolve-address',
+        { addressLabel: trimmedAddress },
+        profile.userId
+      );
+
+      setResolvedLocation(response.location?.coordinates ?? null);
+      if (response.neighborhood) {
+        setSelectedNeighborhood(response.neighborhood);
+      }
+
+      if (response.resolutionMode === 'geocoded' && response.neighborhood) {
+        setResolutionMessage(`Address matched to ${response.neighborhood}.`);
+      } else if (response.resolutionMode === 'outside_dataset') {
+        setResolutionMessage('Address was found, but it is outside the imported neighborhood polygons.');
+      } else {
+        setResolutionMessage('Street not found. You can still choose the neighborhood manually on the map.');
+      }
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : 'Unable to resolve address.');
+    } finally {
+      setResolving(false);
+    }
+  }
 
   async function handleContinue() {
     const trimmedAddress = addressLabel.trim();
@@ -97,7 +155,7 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
     }
 
     if (!trimmedNeighborhood) {
-      setError('Select the neighborhood from the list.');
+      setError('Select the neighborhood from the list or resolve the street first.');
       return;
     }
 
@@ -109,7 +167,13 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
         '/identity/home-address',
         {
           addressLabel: trimmedAddress,
-          neighborhood: trimmedNeighborhood
+          neighborhood: trimmedNeighborhood,
+          location: resolvedLocation
+            ? {
+                type: 'Point',
+                coordinates: resolvedLocation
+              }
+            : undefined
         },
         profile.userId
       );
@@ -135,7 +199,7 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           <Text style={styles.eyebrow}>Neighborhood Setup</Text>
           <Text style={styles.title}>Choose where you belong</Text>
           <Text style={styles.subtitle}>
-            The selected neighborhood becomes your local group. You will get a shared chat with everyone registered in the same area.
+            Type your street to auto-detect the neighborhood from coordinates, or tap the real neighborhood polygons on the map.
           </Text>
         </View>
 
@@ -143,12 +207,24 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           <Text style={styles.label}>Address</Text>
           <TextInput
             value={addressLabel}
-            onChangeText={setAddressLabel}
+            onChangeText={(value) => {
+              setAddressLabel(value);
+              setResolutionMessage(null);
+              setResolvedLocation(null);
+            }}
             placeholder="Strada, numar, reper"
             placeholderTextColor={colors.textMuted}
             style={styles.input}
-            editable={!busy}
+            editable={!busy && !resolving}
           />
+          <Pressable
+            style={[styles.resolveButton, resolving && styles.buttonDisabled]}
+            onPress={handleResolveAddress}
+            disabled={resolving || busy}
+          >
+            {resolving ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.resolveButtonText}>Find neighborhood from street</Text>}
+          </Pressable>
+          {resolutionMessage ? <Text style={styles.helperSuccess}>{resolutionMessage}</Text> : null}
         </SectionCard>
 
         <SectionCard title="Neighborhood">
@@ -185,37 +261,38 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
               </View>
 
               <View style={styles.mapCard}>
-                <Text style={styles.mapTitle}>Neighborhood map</Text>
-                <View style={[styles.mapCanvas, { height: mapHeight }]}>
-                  {neighborhoods.map((neighborhood) => {
-                    const active = selectedNeighborhood === neighborhood.name;
+                <Text style={styles.mapTitle}>Official neighborhood map</Text>
+                <View style={[styles.svgWrap, { height: mapHeight }]}>
+                  <Svg
+                    width="100%"
+                    height="100%"
+                    viewBox={`${minX - viewBoxPadding} ${minY - viewBoxPadding} ${rawMapWidth + viewBoxPadding * 2} ${
+                      rawMapHeight + viewBoxPadding * 2
+                    }`}
+                  >
+                    {neighborhoods.map((neighborhood) => {
+                      const active = selectedNeighborhood === neighborhood.name;
 
-                    return (
-                      <Pressable
-                        key={neighborhood.id}
-                        onPress={() => setSelectedNeighborhood(neighborhood.name)}
-                        style={[
-                          styles.zoneShape,
-                          {
-                            top: neighborhood.mapTop * mapScale,
-                            left: neighborhood.mapLeft * mapScale,
-                            width: neighborhood.mapWidth * mapScale,
-                            height: neighborhood.mapHeight * mapScale
-                          },
-                          active && styles.zoneShapeActive
-                        ]}
-                      >
-                        <Text style={[styles.zoneLabel, active && styles.zoneLabelActive, { fontSize: Math.max(9, 11 * mapScale) }]}>
-                          {neighborhood.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                      return neighborhood.polygons.map((ring, index) => (
+                        <Polygon
+                          key={`${neighborhood.id}-${index}`}
+                          points={ring.map(([lng, lat]) => `${lng},${-lat}`).join(' ')}
+                          fill={active ? '#8FD9CA' : '#E6F2EF'}
+                          stroke={active ? '#0D5E57' : '#7BA59C'}
+                          strokeWidth={0.0005}
+                          onPress={() => setSelectedNeighborhood(neighborhood.name)}
+                        />
+                      ));
+                    })}
+                    {resolvedLocation ? (
+                      <Circle cx={resolvedLocation[0]} cy={-resolvedLocation[1]} r={0.0008} fill="#B42318" />
+                    ) : null}
+                  </Svg>
                 </View>
                 <Text style={styles.mapHint}>
                   {selectedNeighborhood
-                    ? `This will place you in the ${selectedNeighborhood} neighborhood chat.`
-                    : 'Select a neighborhood from the list or tap a zone on the right.'}
+                    ? `Selected neighborhood: ${selectedNeighborhood}`
+                    : 'Select a neighborhood from the list or tap a polygon on the map.'}
                 </Text>
               </View>
             </View>
@@ -278,6 +355,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#F9FBFC'
   },
+  resolveButton: {
+    marginTop: spacing.sm,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  resolveButtonText: {
+    color: '#ffffff',
+    fontWeight: '800'
+  },
   loaderBlock: {
     paddingVertical: spacing.md,
     alignItems: 'center',
@@ -285,6 +374,11 @@ const styles = StyleSheet.create({
   },
   helperText: {
     color: colors.textMuted
+  },
+  helperSuccess: {
+    color: colors.primary,
+    fontWeight: '700',
+    marginTop: spacing.sm
   },
   selectorLayout: {
     gap: spacing.md
@@ -318,54 +412,33 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   neighborhoodChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary
+    backgroundColor: '#D7F5EE',
+    borderColor: '#6DD3C4'
   },
   neighborhoodChipText: {
     color: colors.text,
     fontWeight: '700'
   },
   neighborhoodChipTextActive: {
-    color: '#ffffff'
+    color: '#0D5E57'
   },
   mapCard: {
     borderRadius: 22,
-    backgroundColor: '#EEF6F5',
+    backgroundColor: '#F7FAFA',
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.md
   },
   mapTitle: {
     color: colors.text,
     fontWeight: '800',
+    fontSize: 16,
     marginBottom: spacing.sm
   },
-  mapCanvas: {
+  svgWrap: {
     borderRadius: 18,
-    backgroundColor: '#DDECE9',
-    position: 'relative',
-    overflow: 'hidden'
-  },
-  zoneShape: {
-    position: 'absolute',
-    borderRadius: 20,
-    backgroundColor: '#BAD8D2',
-    borderWidth: 1,
-    borderColor: '#8AB8AF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8
-  },
-  zoneShapeActive: {
-    backgroundColor: '#0D5E57',
-    borderColor: '#0D5E57'
-  },
-  zoneLabel: {
-    color: '#144A44',
-    fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center'
-  },
-  zoneLabelActive: {
-    color: '#ffffff'
+    overflow: 'hidden',
+    backgroundColor: '#FDFEFE'
   },
   mapHint: {
     marginTop: spacing.sm,
@@ -374,23 +447,23 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: spacing.md,
-    backgroundColor: colors.primary,
     minHeight: 52,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    justifyContent: 'center'
-  },
-  buttonDisabled: {
-    opacity: 0.7
+    justifyContent: 'center',
+    backgroundColor: colors.primary
   },
   primaryButtonText: {
     color: '#ffffff',
     fontWeight: '800',
     fontSize: 16
   },
+  buttonDisabled: {
+    opacity: 0.7
+  },
   errorText: {
-    marginTop: spacing.sm,
     color: '#B42318',
-    lineHeight: 20
+    fontWeight: '600',
+    marginTop: spacing.sm
   }
 });

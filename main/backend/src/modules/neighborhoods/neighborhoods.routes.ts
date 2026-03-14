@@ -7,6 +7,7 @@ import { neighborhoodsController } from './neighborhoods.controller';
 export const neighborhoodsRouter = Router();
 
 neighborhoodsRouter.get('/', asyncHandler(neighborhoodsController.listNeighborhoods));
+neighborhoodsRouter.post('/resolve-address', requireAuth, asyncHandler(neighborhoodsController.resolveAddress));
 neighborhoodsRouter.get('/my-chat', requireAuth, asyncHandler(neighborhoodsController.getMyNeighborhoodChat));
 neighborhoodsRouter.post(
   '/my-chat/messages',
