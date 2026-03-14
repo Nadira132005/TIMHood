@@ -8,22 +8,33 @@ type GeoPoint = {
 };
 
 export interface IUser {
-  email: string;
+  _id: string;
+  email?: string;
   phone?: string;
-  password_hash: string;
+  password_hash?: string;
   account_status: 'active' | 'disabled';
+  document_number?: string;
   document_number_encrypted?: string;
   document_number_hash?: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  nationality?: string;
+  issuing_state?: string;
+  date_of_birth?: Date;
+  date_of_expiry?: Date;
+  profile_photo_base64?: string;
   verification_state: (typeof VerificationStates)[number];
   verified_at?: Date;
   verification_locked_at?: Date;
+  document_checked_at?: Date;
   last_seen_at?: Date;
   created_at: Date;
   updated_at: Date;
 }
 
 export interface IUserLocation {
-  user_id: mongoose.Types.ObjectId;
+  user_id: string;
   home_location_point: GeoPoint;
   home_location_label?: string;
   home_place_id?: string;
@@ -39,12 +50,22 @@ export interface IUserLocation {
 
 const userSchema = new Schema<IUser>(
   {
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    _id: { type: String, required: true, trim: true },
+    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     phone: { type: String },
-    password_hash: { type: String, required: true },
+    password_hash: { type: String },
     account_status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    document_number: { type: String, unique: true, sparse: true, trim: true },
     document_number_encrypted: { type: String },
     document_number_hash: { type: String, unique: true, sparse: true },
+    first_name: { type: String },
+    last_name: { type: String },
+    full_name: { type: String },
+    nationality: { type: String },
+    issuing_state: { type: String },
+    date_of_birth: { type: Date },
+    date_of_expiry: { type: Date },
+    profile_photo_base64: { type: String },
     verification_state: {
       type: String,
       enum: VerificationStates,
@@ -53,57 +74,58 @@ const userSchema = new Schema<IUser>(
     },
     verified_at: { type: Date },
     verification_locked_at: { type: Date },
+    document_checked_at: { type: Date },
     last_seen_at: { type: Date }
   },
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
 );
 
-const pointSchema: Record<string, unknown> = {
-  type: {
-    type: String,
-    enum: ['Point'],
-    default: 'Point',
-    required: true
-  },
-  coordinates: {
-    type: [Number],
-    required: true,
-    validate: {
-      validator(value: number[]) {
-        return Array.isArray(value) && value.length === 2;
-      },
-      message: 'Coordinates must be [lng, lat]'
+const pointSchema = new Schema<GeoPoint>(
+  {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point',
+      required: true
+    },
+    coordinates: {
+      type: [Number],
+      required: true,
+      validate: {
+        validator(value: number[]) {
+          return Array.isArray(value) && value.length === 2;
+        },
+        message: 'Coordinates must be [lng, lat]'
+      }
     }
-  }
-};
+  },
+  { _id: false }
+);
 
-const optionalPointSchema: Record<string, unknown> = {
-  type: {
-    type: String,
-    enum: ['Point'],
-    default: 'Point'
-  },
-  coordinates: {
-    type: [Number],
-    validate: {
-      validator(value: number[]) {
-        return value === undefined || (Array.isArray(value) && value.length === 2);
-      },
-      message: 'Coordinates must be [lng, lat]'
+const optionalPointSchema = new Schema<GeoPoint>(
+  {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number],
+      validate: {
+        validator(value: number[]) {
+          return value === undefined || (Array.isArray(value) && value.length === 2);
+        },
+        message: 'Coordinates must be [lng, lat]'
+      }
     }
-  }
-};
+  },
+  { _id: false }
+);
 
 const userLocationSchema = new Schema<IUserLocation>(
   {
-    user_id: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      unique: true,
-      index: true
-    },
-    home_location_point: { type: pointSchema as any, required: true },
+    user_id: { type: String, ref: 'User', required: true, unique: true, index: true },
+    home_location_point: { type: pointSchema, required: true },
     home_location_label: { type: String },
     home_place_id: { type: String },
     home_input_source: {
@@ -111,7 +133,7 @@ const userLocationSchema = new Schema<IUserLocation>(
       enum: ['pin_drop', 'maps_place_input'],
       required: true
     },
-    work_location_point: { type: optionalPointSchema as any, required: false },
+    work_location_point: { type: optionalPointSchema, required: false },
     work_location_label: { type: String },
     work_place_id: { type: String },
     work_input_source: { type: String, enum: ['pin_drop', 'maps_place_input'] },

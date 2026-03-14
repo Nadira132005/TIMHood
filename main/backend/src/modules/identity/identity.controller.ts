@@ -3,6 +3,35 @@ import { Request, Response } from 'express';
 import { identityService } from './identity.service';
 
 export const identityController = {
+  async loginWithNfc(req: Request, res: Response): Promise<Response> {
+    const result = await identityService.loginWithNfc({
+      documentNumber: req.body?.documentNumber,
+      firstName: req.body?.firstName,
+      lastName: req.body?.lastName,
+      nationality: req.body?.nationality,
+      dateOfBirth: req.body?.dateOfBirth,
+      dateOfExpiry: req.body?.dateOfExpiry,
+      issuingState: req.body?.issuingState,
+      photoBase64: req.body?.photoBase64
+    });
+
+    return res.status(200).json(result);
+  },
+
+  async getMe(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const profile = await identityService.getFixedProfile(userId);
+    if (!profile) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json(profile);
+  },
+
   async getProofStatus(req: Request, res: Response): Promise<Response> {
     const userId = req.auth?.userId;
     if (!userId) {

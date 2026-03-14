@@ -6,8 +6,8 @@ async function bootstrap(): Promise<void> {
   await connectDb();
   const app = buildApp();
 
-  app.listen(env.port, () => {
-    console.log(`Backend listening on port ${env.port}`);
+  app.listen(env.port, env.host, () => {
+    console.log(`Backend listening on ${env.host}:${env.port}`);
   });
 }
 

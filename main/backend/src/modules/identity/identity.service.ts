@@ -3,6 +3,17 @@ import crypto from 'crypto';
 import { HttpError } from '../../shared/utils/http-error';
 import { User, UserLocation } from './identity.model';
 
+type NfcLoginPayload = {
+  documentNumber: string;
+  firstName: string;
+  lastName: string;
+  nationality: string;
+  dateOfBirth: string;
+  dateOfExpiry: string;
+  issuingState?: string;
+  photoBase64?: string;
+};
+
 type ProofStatusResponse = {
   _id: string;
   verification_state: 'unverified' | 'verified';
@@ -27,6 +38,25 @@ type LocationPayload = {
   work_input_source?: 'pin_drop' | 'maps_place_input';
 };
 
+type FixedProfileResponse = {
+  userId: string;
+  documentNumber: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  nationality: string;
+  issuingState?: string;
+  dateOfBirth: string;
+  dateOfExpiry: string;
+  photoBase64?: string;
+  documentIsValid: boolean;
+};
+
+type NfcLoginResponse = {
+  userId: string;
+  profile: FixedProfileResponse;
+};
+
 function hashDocumentNumber(documentNumber: string): string {
   return crypto.createHash('sha256').update(documentNumber.trim()).digest('hex');
 }
@@ -35,7 +65,193 @@ function encodeDocumentNumber(documentNumber: string): string {
   return Buffer.from(documentNumber.trim(), 'utf8').toString('base64');
 }
 
+function normalizeName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function parseMrzDate(value: string, field: string): Date {
+  const normalized = value.trim();
+  if (!/^\d{6}$/.test(normalized)) {
+    throw new HttpError(400, `${field} must use YYMMDD format`);
+  }
+
+  const yy = Number(normalized.slice(0, 2));
+  const month = Number(normalized.slice(2, 4));
+  const day = Number(normalized.slice(4, 6));
+  const currentTwoDigitYear = new Date().getUTCFullYear() % 100;
+  let fullYear = 2000 + yy;
+
+  if (field === 'dateOfBirth' && yy > currentTwoDigitYear) {
+    fullYear = 1900 + yy;
+  }
+
+  const parsed = new Date(Date.UTC(fullYear, month - 1, day));
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== fullYear ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new HttpError(400, `${field} is not a valid calendar date`);
+  }
+
+  return parsed;
+}
+
+function toIsoDate(value?: Date): string | undefined {
+  return value ? value.toISOString().slice(0, 10) : undefined;
+}
+
+function buildFixedProfile(user: {
+  document_number?: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  nationality?: string;
+  issuing_state?: string;
+  date_of_birth?: Date;
+  date_of_expiry?: Date;
+  profile_photo_base64?: string;
+}): FixedProfileResponse {
+  if (
+    !user.document_number ||
+    !user.first_name ||
+    !user.last_name ||
+    !user.full_name ||
+    !user.nationality ||
+    !user.date_of_birth ||
+    !user.date_of_expiry
+  ) {
+    throw new HttpError(500, 'Stored identity profile is incomplete');
+  }
+
+  return {
+    userId: user.document_number,
+    documentNumber: user.document_number,
+    firstName: user.first_name,
+    lastName: user.last_name,
+    fullName: user.full_name,
+    nationality: user.nationality,
+    issuingState: user.issuing_state,
+    dateOfBirth: toIsoDate(user.date_of_birth)!,
+    dateOfExpiry: toIsoDate(user.date_of_expiry)!,
+    photoBase64: user.profile_photo_base64,
+    documentIsValid: user.date_of_expiry.getTime() >= Date.now()
+  };
+}
+
 export const identityService = {
+  async loginWithNfc(payload: NfcLoginPayload): Promise<NfcLoginResponse> {
+    const documentNumber = payload.documentNumber.trim().toUpperCase();
+    const firstName = normalizeName(payload.firstName);
+    const lastName = normalizeName(payload.lastName);
+    const nationality = payload.nationality.trim().toUpperCase();
+    const issuingState = payload.issuingState?.trim().toUpperCase() || undefined;
+
+    if (!documentNumber) {
+      throw new HttpError(400, 'documentNumber is required');
+    }
+
+    if (!firstName || !lastName || !nationality) {
+      throw new HttpError(400, 'firstName, lastName, and nationality are required');
+    }
+
+    const dateOfBirth = parseMrzDate(payload.dateOfBirth, 'dateOfBirth');
+    const dateOfExpiry = parseMrzDate(payload.dateOfExpiry, 'dateOfExpiry');
+    if (dateOfExpiry.getTime() < Date.now()) {
+      throw new HttpError(400, 'Document is expired');
+    }
+
+    const now = new Date();
+    const fullName = `${firstName} ${lastName}`.trim();
+    const documentNumberHash = hashDocumentNumber(documentNumber);
+    const documentNumberEncoded = encodeDocumentNumber(documentNumber);
+    const duplicateWithDifferentId = await User.findOne({
+      document_number: documentNumber,
+      _id: { $ne: documentNumber }
+    })
+      .select('_id')
+      .lean();
+
+    if (duplicateWithDifferentId) {
+      throw new HttpError(
+        409,
+        `Duplicate user exists for document_number ${documentNumber}. Clean old rows before retrying.`
+      );
+    }
+
+    const existingUser = await User.findById(documentNumber);
+    if (existingUser) {
+      const fixedFieldsMatch =
+        existingUser.first_name === firstName &&
+        existingUser.last_name === lastName &&
+        existingUser.nationality === nationality &&
+        existingUser.issuing_state === issuingState &&
+        toIsoDate(existingUser.date_of_birth) === toIsoDate(dateOfBirth) &&
+        toIsoDate(existingUser.date_of_expiry) === toIsoDate(dateOfExpiry);
+
+      if (!fixedFieldsMatch) {
+        throw new HttpError(409, 'Stored document identity does not match the NFC read');
+      }
+    }
+
+    const savedUser = await User.findOneAndUpdate(
+      { _id: documentNumber },
+      {
+        $set: {
+          document_number: documentNumber,
+          document_number_encrypted: documentNumberEncoded,
+          document_number_hash: documentNumberHash,
+          first_name: firstName,
+          last_name: lastName,
+          full_name: fullName,
+          nationality,
+          issuing_state: issuingState,
+          date_of_birth: dateOfBirth,
+          date_of_expiry: dateOfExpiry,
+          profile_photo_base64: payload.photoBase64,
+          verification_state: 'verified',
+          document_checked_at: now,
+          last_seen_at: now
+        },
+        $setOnInsert: {
+          _id: documentNumber,
+          account_status: 'active',
+          verified_at: now,
+          verification_locked_at: now
+        }
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true
+      }
+    );
+
+    if (!savedUser) {
+      throw new HttpError(500, 'Failed to save NFC login user');
+    }
+
+    return {
+      userId: documentNumber,
+      profile: buildFixedProfile(savedUser)
+    };
+  },
+
+  async getFixedProfile(documentNumber: string): Promise<FixedProfileResponse | null> {
+    const user = await User.findOne({ document_number: documentNumber.trim().toUpperCase() })
+      .select(
+        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64'
+      )
+      .lean();
+
+    if (!user) {
+      return null;
+    }
+
+    return buildFixedProfile(user);
+  },
+
   async getProofStatus(userId: string): Promise<ProofStatusResponse | null> {
     const user = await User.findById(userId)
       .select('_id verification_state verified_at verification_locked_at')
