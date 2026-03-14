@@ -36,6 +36,12 @@ type ApduResult = {
   ok: boolean;
 };
 
+type CardAccessSummary = {
+  rawHex: string;
+  oidLabels: string[];
+  paceLikely: boolean;
+};
+
 function App() {
   return (
     <SafeAreaProvider>
@@ -54,6 +60,7 @@ function AppContent() {
   const [lastTag, setLastTag] = useState<NfcTag | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [apduResults, setApduResults] = useState<ApduResult[]>([]);
+  const [cardAccess, setCardAccess] = useState<CardAccessSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [customApdu, setCustomApdu] = useState('00A4040C07A0000002471001');
   const [credentials, setCredentials] = useState<AccessCredentials>({
@@ -116,6 +123,7 @@ function AppContent() {
     setBusy(true);
     setError(null);
     setApduResults([]);
+    setCardAccess(null);
 
     try {
       await NfcManager.requestTechnology(NfcTech.IsoDep);
@@ -167,6 +175,74 @@ function AppContent() {
       setLastTag(tag);
       setApduResults(nextResults);
       setAnalysis(analyzeTag(tag, credentials, nextResults));
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
+  async function handleReadCardAccess() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const results = [...apduResults];
+      const selectIcao = await sendApdu('SELECT ICAO applet', [
+        0x00, 0xa4, 0x04, 0x0c, 0x07, 0xa0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01,
+      ]);
+      results.push(selectIcao);
+
+      if (!selectIcao.ok) {
+        throw new Error(`ICAO applet select failed with SW ${selectIcao.sw}.`);
+      }
+
+      const selectMf = await sendApdu('SELECT MF', [
+        0x00, 0xa4, 0x00, 0x0c, 0x02, 0x3f, 0x00,
+      ]);
+      results.push(selectMf);
+
+      if (!selectMf.ok) {
+        throw new Error(`MF select failed with SW ${selectMf.sw}.`);
+      }
+
+      const selectCardAccess = await sendApdu('SELECT EF.CardAccess', [
+        0x00, 0xa4, 0x00, 0x0c, 0x02, 0x01, 0x1c,
+      ]);
+      results.push(selectCardAccess);
+
+      if (!selectCardAccess.ok) {
+        throw new Error(`EF.CardAccess select failed with SW ${selectCardAccess.sw}.`);
+      }
+
+      const cardAccessBytes = await readCardAccessFile();
+      const summary = summarizeCardAccess(cardAccessBytes);
+      const fileRead = {
+        label: 'READ EF.CardAccess',
+        commandHex: '00B0....',
+        responseHex: summary.rawHex,
+        sw: '9000',
+        ok: true,
+      };
+      const nextResults = [...results, fileRead];
+
+      setLastTag(tag);
+      setApduResults(nextResults);
+      setCardAccess(summary);
+      setAnalysis(analyzeTag(tag, credentials, nextResults, summary));
     } catch (scanError) {
       setError(getErrorMessage(scanError));
     } finally {
@@ -278,6 +354,16 @@ function AppContent() {
             ]}>
             <Text style={styles.secondaryButtonText}>Send Custom APDU</Text>
           </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleReadCardAccess}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Read CardAccess</Text>
+          </Pressable>
         </View>
 
         {analysis ? (
@@ -289,6 +375,27 @@ function AppContent() {
                 {`\u2022 ${detail}`}
               </Text>
             ))}
+          </View>
+        ) : null}
+
+        {cardAccess ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>CardAccess</Text>
+            <Text style={styles.cardText}>
+              This file advertises the chip security mechanisms. If PACE OIDs
+              appear here, the next real step is implementing PACE with the CAN.
+            </Text>
+            <Text style={styles.detail}>
+              {cardAccess.paceLikely
+                ? 'PACE security info appears to be present.'
+                : 'No known PACE OID was recognized in the raw CardAccess bytes.'}
+            </Text>
+            {cardAccess.oidLabels.map(label => (
+              <Text key={label} style={styles.detail}>
+                {`\u2022 ${label}`}
+              </Text>
+            ))}
+            <Text style={styles.raw}>{cardAccess.rawHex}</Text>
           </View>
         ) : null}
 
@@ -347,6 +454,7 @@ function analyzeTag(
   tag: NfcTag,
   credentials: AccessCredentials,
   apduResults: ApduResult[],
+  cardAccess?: CardAccessSummary | null,
 ): Analysis {
   const techTypes = normalizeTechTypes(tag.techTypes);
   const hasIsoDep = techTypes.includes('IsoDep');
@@ -371,6 +479,9 @@ function analyzeTag(
           : hasNfcB
             ? 'The chip also answers as Type B.'
             : 'The Type A/Type B modulation was not exposed in tag metadata.',
+        cardAccess?.paceLikely
+          ? 'CardAccess advertises PACE-related security info, so CAN-based chip access is likely the correct next step.'
+          : 'CardAccess has not been read yet or did not expose a recognized PACE identifier.',
         'Protected CEI file reading still needs Romanian secure-access APDUs and file parsing.',
       ],
     };
@@ -429,11 +540,105 @@ async function runCeiProbe(): Promise<ApduResult[]> {
   const results: ApduResult[] = [];
 
   for (const command of commands) {
-    const response = await NfcManager.isoDepHandler.transceive(command.bytes);
-    results.push(toApduResult(command.label, command.bytes, response));
+    results.push(await sendApdu(command.label, command.bytes));
   }
 
   return results;
+}
+
+async function sendApdu(label: string, bytes: number[]): Promise<ApduResult> {
+  const response = await NfcManager.isoDepHandler.transceive(bytes);
+  return toApduResult(label, bytes, response);
+}
+
+async function readCardAccessFile(): Promise<number[]> {
+  const sfiBytes = await readBinaryFileBySfi(0x01);
+
+  if (sfiBytes.length > 0) {
+    return sfiBytes;
+  }
+
+  return readBinaryFileByOffset();
+}
+
+async function readBinaryFileBySfi(sfi: number): Promise<number[]> {
+  const collected: number[] = [];
+  let offset = 0;
+
+  while (offset < 512) {
+    const chunkSize = 0x10;
+    const p1 = 0x80 + sfi;
+    const response = await NfcManager.isoDepHandler.transceive([
+      0x00,
+      0xb0,
+      p1,
+      offset,
+      chunkSize,
+    ]);
+    const sw = bytesToHex(response.slice(-2));
+
+    if (sw !== '9000') {
+      if (collected.length > 0 && (sw === '6282' || sw === '6B00' || sw === '6A86')) {
+        break;
+      }
+
+      if (collected.length === 0 && (sw === '6986' || sw === '6A86')) {
+        return [];
+      }
+
+      throw new Error(`SFI READ BINARY failed with SW ${sw} at offset ${offset}.`);
+    }
+
+    const data = response.slice(0, -2);
+    collected.push(...data);
+
+    if (data.length < chunkSize) {
+      break;
+    }
+
+    offset += data.length;
+  }
+
+  return collected;
+}
+
+async function readBinaryFileByOffset(): Promise<number[]> {
+  const collected: number[] = [];
+  let offset = 0;
+
+  while (offset < 512) {
+    const chunkSize = 0x20;
+    // APDU offset bytes are naturally expressed with bit operations.
+    const response = await NfcManager.isoDepHandler.transceive([
+      0x00,
+      0xb0,
+      // eslint-disable-next-line no-bitwise
+      (offset >> 8) & 0xff,
+      // eslint-disable-next-line no-bitwise
+      offset & 0xff,
+      chunkSize,
+    ]);
+    const sw = bytesToHex(response.slice(-2));
+
+    if (sw !== '9000') {
+      if (sw === '6282' || sw === '6B00') {
+        break;
+      }
+
+      throw new Error(`READ BINARY failed with SW ${sw} at offset ${offset}.`);
+    }
+
+    const data = response.slice(0, -2);
+    collected.push(...data);
+
+    if (data.length < chunkSize) {
+      break;
+    }
+
+    offset += data.length;
+  }
+
+  return collected;
 }
 
 function toApduResult(
@@ -451,6 +656,80 @@ function toApduResult(
     sw,
     ok: sw === '9000',
   };
+}
+
+function summarizeCardAccess(bytes: number[]): CardAccessSummary {
+  const rawHex = bytesToHex(bytes);
+  const oidHexes = extractOidHexes(bytes);
+  const oidLabels = oidHexes.map(formatOidHex);
+  const paceLikely = oidLabels.some(label => label.includes('PACE'));
+
+  return {
+    rawHex,
+    oidLabels,
+    paceLikely,
+  };
+}
+
+function extractOidHexes(bytes: number[]): string[] {
+  const oids: string[] = [];
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] !== 0x06 || index + 1 >= bytes.length) {
+      continue;
+    }
+
+    const length = bytes[index + 1];
+    const start = index + 2;
+    const end = start + length;
+
+    if (end <= bytes.length) {
+      oids.push(bytesToHex(bytes.slice(start, end)));
+      index = end - 1;
+    }
+  }
+
+  return Array.from(new Set(oids));
+}
+
+function formatOidHex(oidHex: string): string {
+  const knownOidLabels: Record<string, string> = {
+    '04007F00070202040202': 'PACE ECDH GM AES-CBC-CMAC-128',
+    '04007F00070202040203': 'PACE ECDH GM AES-CBC-CMAC-192',
+    '04007F00070202040204': 'PACE ECDH GM AES-CBC-CMAC-256',
+    '04007F00070202040102': 'PACE DH GM AES-CBC-CMAC-128',
+    '04007F00070202040103': 'PACE DH GM AES-CBC-CMAC-192',
+    '04007F00070202040104': 'PACE DH GM AES-CBC-CMAC-256',
+  };
+
+  return knownOidLabels[oidHex] ?? `OID ${decodeOid(oidHex)} (${oidHex})`;
+}
+
+function decodeOid(oidHex: string): string {
+  const bytes = hexToBytes(oidHex);
+
+  if (bytes.length === 0) {
+    return oidHex;
+  }
+
+  const values: number[] = [];
+  const first = bytes[0];
+  values.push(Math.floor(first / 40));
+  values.push(first % 40);
+
+  let current = 0;
+  for (const byte of bytes.slice(1)) {
+    // ASN.1 OID base-128 decoding is naturally bitwise.
+    // eslint-disable-next-line no-bitwise
+    current = (current << 7) | (byte & 0x7f);
+    // eslint-disable-next-line no-bitwise
+    if ((byte & 0x80) === 0) {
+      values.push(current);
+      current = 0;
+    }
+  }
+
+  return values.join('.');
 }
 
 function maskDigits(value: string): string {
@@ -555,6 +834,9 @@ const styles = StyleSheet.create({
     color: '#07111f',
     fontSize: 15,
     fontWeight: '800',
+  },
+  secondaryButtonAlt: {
+    marginTop: 12,
   },
   card: {
     backgroundColor: '#10213a',
