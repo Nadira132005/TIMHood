@@ -17,6 +17,8 @@ type LoginResponse = {
   profile: FixedIdentityProfile;
 };
 
+const DEMO_CANS = new Set(['0000', '0001', '0002']);
+
 export function LoginScreen({ onLogin }: Props) {
   const [can, setCan] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,8 +29,9 @@ export function LoginScreen({ onLogin }: Props) {
     setError(null);
 
     try {
-      const identity = await readIdentityCard(can);
-      const response = await apiPost<LoginResponse>('/identity/nfc-login', identity);
+      const response = DEMO_CANS.has(can)
+        ? await apiPost<LoginResponse>('/identity/demo-login', { can })
+        : await apiPost<LoginResponse>('/identity/nfc-login', await readIdentityCard(can));
       onLogin(response.profile);
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : 'Unable to read the ID card.');
@@ -69,6 +72,10 @@ export function LoginScreen({ onLogin }: Props) {
         <Text style={styles.bodyText}>1. Enter the 6-digit CAN printed on the card.</Text>
         <Text style={styles.bodyText}>2. Tap Read ID with NFC and hold the card behind the phone.</Text>
         <Text style={styles.bodyText}>3. If the document is still valid, the user is created or signed in automatically.</Text>
+      </SectionCard>
+
+      <SectionCard title="Demo Users">
+        <Text style={styles.bodyText}>Use `0000`, `0001`, or `0002` to sign in as seeded Soarelui demo users without NFC.</Text>
       </SectionCard>
 
       <SectionCard title="Device Requirement">

@@ -24,6 +24,9 @@ export interface IUser {
   date_of_birth?: Date;
   date_of_expiry?: Date;
   profile_photo_base64?: string;
+  bio?: string;
+  home_address_label?: string;
+  home_neighborhood?: string;
   verification_state: (typeof VerificationStates)[number];
   verified_at?: Date;
   verification_locked_at?: Date;
@@ -66,6 +69,9 @@ const userSchema = new Schema<IUser>(
     date_of_birth: { type: Date },
     date_of_expiry: { type: Date },
     profile_photo_base64: { type: String },
+    bio: { type: String },
+    home_address_label: { type: String },
+    home_neighborhood: { type: String },
     verification_state: {
       type: String,
       enum: VerificationStates,

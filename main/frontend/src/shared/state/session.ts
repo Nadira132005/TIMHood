@@ -9,7 +9,10 @@ export type FixedIdentityProfile = {
   dateOfBirth: string;
   dateOfExpiry: string;
   photoBase64?: string;
+  bio?: string;
   documentIsValid: boolean;
+  homeAddressLabel?: string;
+  homeNeighborhood?: string | null;
 };
 
 export type SessionState = {

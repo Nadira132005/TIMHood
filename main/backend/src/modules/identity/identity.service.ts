@@ -1,7 +1,10 @@
 import crypto from 'crypto';
 
 import { HttpError } from '../../shared/utils/http-error';
+import { communitiesService } from '../communities/communities.service';
+import { neighborhoodsService } from '../neighborhoods/neighborhoods.service';
 import { User, UserLocation } from './identity.model';
+import { resolveNeighborhood } from './neighborhood-resolver';
 
 type NfcLoginPayload = {
   documentNumber: string;
@@ -49,12 +52,45 @@ type FixedProfileResponse = {
   dateOfBirth: string;
   dateOfExpiry: string;
   photoBase64?: string;
+  bio?: string;
   documentIsValid: boolean;
+  homeAddressLabel?: string;
+  homeNeighborhood?: string | null;
+};
+
+type PublicProfileResponse = {
+  userId: string;
+  fullName: string;
+  photoBase64?: string;
+  bio?: string;
+  age?: number;
+  neighborhood?: string | null;
+  lastSeenAt?: string;
 };
 
 type NfcLoginResponse = {
   userId: string;
   profile: FixedProfileResponse;
+};
+
+type DemoLoginPayload = {
+  can: string;
+};
+
+type AddressOnboardingPayload = {
+  addressLabel: string;
+  neighborhood: string;
+  location?: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+};
+
+type AddressOnboardingResponse = {
+  userId: string;
+  addressLabel: string;
+  neighborhood: string | null;
+  neighborhoodResolutionMode: 'manual_selection';
 };
 
 function hashDocumentNumber(documentNumber: string): string {
@@ -112,6 +148,9 @@ function buildFixedProfile(user: {
   date_of_birth?: Date;
   date_of_expiry?: Date;
   profile_photo_base64?: string;
+  bio?: string;
+  home_address_label?: string;
+  home_neighborhood?: string;
 }): FixedProfileResponse {
   if (
     !user.document_number ||
@@ -136,11 +175,149 @@ function buildFixedProfile(user: {
     dateOfBirth: toIsoDate(user.date_of_birth)!,
     dateOfExpiry: toIsoDate(user.date_of_expiry)!,
     photoBase64: user.profile_photo_base64,
-    documentIsValid: user.date_of_expiry.getTime() >= Date.now()
+    bio: user.bio,
+    documentIsValid: user.date_of_expiry.getTime() >= Date.now(),
+    homeAddressLabel: user.home_address_label,
+    homeNeighborhood: user.home_neighborhood ?? null
   };
 }
 
+function getAge(dateOfBirth?: Date): number | undefined {
+  if (!dateOfBirth) {
+    return undefined;
+  }
+
+  const today = new Date();
+  let age = today.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - dateOfBirth.getUTCMonth();
+  const dayDiff = today.getUTCDate() - dateOfBirth.getUTCDate();
+
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+    age -= 1;
+  }
+
+  return age;
+}
+
+const DEMO_USERS: Record<
+  string,
+  {
+    documentNumber: string;
+    firstName: string;
+    lastName: string;
+    nationality: string;
+    issuingState: string;
+    dateOfBirth: string;
+    dateOfExpiry: string;
+    bio: string;
+    homeAddressLabel: string;
+    homeNeighborhood: string;
+  }
+> = {
+  '0000': {
+    documentNumber: 'SOARELUI-DEMO-0000',
+    firstName: 'Mara',
+    lastName: 'Popescu',
+    nationality: 'ROU',
+    issuingState: 'ROU',
+    dateOfBirth: '980412',
+    dateOfExpiry: '351231',
+    bio: 'Coffee walks, school pickup coordination, and neighborhood updates.',
+    homeAddressLabel: 'Aleea FC Ripensia 12',
+    homeNeighborhood: 'Soarelui'
+  },
+  '0001': {
+    documentNumber: 'SOARELUI-DEMO-0001',
+    firstName: 'Andrei',
+    lastName: 'Ionescu',
+    nationality: 'ROU',
+    issuingState: 'ROU',
+    dateOfBirth: '910225',
+    dateOfExpiry: '351231',
+    bio: 'Plays football on weekends and helps with small repairs.',
+    homeAddressLabel: 'Strada Sirius 8',
+    homeNeighborhood: 'Soarelui'
+  },
+  '0002': {
+    documentNumber: 'SOARELUI-DEMO-0002',
+    firstName: 'Teodora',
+    lastName: 'Marin',
+    nationality: 'ROU',
+    issuingState: 'ROU',
+    dateOfBirth: '960903',
+    dateOfExpiry: '351231',
+    bio: 'Pet-friendly neighbor, marketplace regular, and event organizer.',
+    homeAddressLabel: 'Bulevardul Sudului 18',
+    homeNeighborhood: 'Soarelui'
+  }
+};
+
 export const identityService = {
+  async loginWithDemoCan(payload: DemoLoginPayload): Promise<NfcLoginResponse> {
+    const can = payload.can.trim();
+    const demoUser = DEMO_USERS[can];
+
+    if (!demoUser) {
+      throw new HttpError(404, 'Unknown demo CAN');
+    }
+
+    const dateOfBirth = parseMrzDate(demoUser.dateOfBirth, 'dateOfBirth');
+    const dateOfExpiry = parseMrzDate(demoUser.dateOfExpiry, 'dateOfExpiry');
+    const now = new Date();
+    const canonicalNeighborhood = await neighborhoodsService.getCanonicalNeighborhoodName(
+      demoUser.homeNeighborhood
+    );
+
+    const savedUser = await User.findOneAndUpdate(
+      { _id: demoUser.documentNumber },
+      {
+        $set: {
+          document_number: demoUser.documentNumber,
+          document_number_encrypted: encodeDocumentNumber(demoUser.documentNumber),
+          document_number_hash: hashDocumentNumber(demoUser.documentNumber),
+          first_name: demoUser.firstName,
+          last_name: demoUser.lastName,
+          full_name: `${demoUser.firstName} ${demoUser.lastName}`,
+          nationality: demoUser.nationality,
+          issuing_state: demoUser.issuingState,
+          date_of_birth: dateOfBirth,
+          date_of_expiry: dateOfExpiry,
+          bio: demoUser.bio,
+          home_address_label: demoUser.homeAddressLabel,
+          home_neighborhood: canonicalNeighborhood,
+          verification_state: 'verified',
+          document_checked_at: now,
+          last_seen_at: now
+        },
+        $setOnInsert: {
+          _id: demoUser.documentNumber,
+          account_status: 'active',
+          verified_at: now,
+          verification_locked_at: now
+        }
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true
+      }
+    );
+
+    if (!savedUser) {
+      throw new HttpError(500, 'Failed to save demo user');
+    }
+
+    await communitiesService.ensureNeighborhoodGroupsForUser(
+      demoUser.documentNumber,
+      canonicalNeighborhood
+    );
+
+    return {
+      userId: demoUser.documentNumber,
+      profile: buildFixedProfile(savedUser)
+    };
+  },
+
   async loginWithNfc(payload: NfcLoginPayload): Promise<NfcLoginResponse> {
     const documentNumber = payload.documentNumber.trim().toUpperCase();
     const firstName = normalizeName(payload.firstName);
@@ -241,7 +418,7 @@ export const identityService = {
   async getFixedProfile(documentNumber: string): Promise<FixedProfileResponse | null> {
     const user = await User.findOne({ document_number: documentNumber.trim().toUpperCase() })
       .select(
-        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64'
+        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64 bio home_address_label home_neighborhood'
       )
       .lean();
 
@@ -250,6 +427,26 @@ export const identityService = {
     }
 
     return buildFixedProfile(user);
+  },
+
+  async getPublicProfile(userId: string): Promise<PublicProfileResponse | null> {
+    const user = await User.findById(userId)
+      .select('full_name profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at')
+      .lean();
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      userId,
+      fullName: user.full_name || userId,
+      photoBase64: user.profile_photo_base64,
+      bio: user.bio,
+      age: getAge(user.date_of_birth),
+      neighborhood: user.home_neighborhood ?? null,
+      lastSeenAt: user.last_seen_at?.toISOString()
+    };
   },
 
   async getProofStatus(userId: string): Promise<ProofStatusResponse | null> {
@@ -338,5 +535,82 @@ export const identityService = {
         setDefaultsOnInsert: true
       }
     ).lean();
+  },
+
+  async saveHomeAddress(userId: string, payload: AddressOnboardingPayload): Promise<AddressOnboardingResponse> {
+    const addressLabel = payload.addressLabel.trim();
+    const neighborhood = payload.neighborhood.trim();
+    if (!addressLabel) {
+      throw new HttpError(400, 'addressLabel is required');
+    }
+
+    if (!neighborhood) {
+      throw new HttpError(400, 'neighborhood is required');
+    }
+
+    const canonicalNeighborhood = await neighborhoodsService.getCanonicalNeighborhoodName(neighborhood);
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    user.home_address_label = addressLabel;
+    user.home_neighborhood = canonicalNeighborhood;
+    await user.save();
+    await communitiesService.ensureNeighborhoodGroupsForUser(userId, canonicalNeighborhood);
+
+    if (payload.location) {
+      if (
+        payload.location.type !== 'Point' ||
+        !Array.isArray(payload.location.coordinates) ||
+        payload.location.coordinates.length !== 2
+      ) {
+        throw new HttpError(400, 'location must be a GeoJSON Point when provided');
+      }
+
+      const resolverResult = resolveNeighborhood(payload.location);
+      await UserLocation.findOneAndUpdate(
+        { user_id: user._id },
+        {
+          user_id: user._id,
+          home_location_point: payload.location,
+          home_location_label: addressLabel,
+          home_input_source: 'maps_place_input',
+          is_active: true
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true
+        }
+      ).lean();
+
+      if (!user.home_neighborhood && resolverResult.neighborhood) {
+        user.home_neighborhood = resolverResult.neighborhood;
+        await user.save();
+      }
+    }
+
+    return {
+      userId: user._id,
+      addressLabel,
+      neighborhood: user.home_neighborhood ?? canonicalNeighborhood,
+      neighborhoodResolutionMode: 'manual_selection'
+    };
+  },
+
+  async saveBio(userId: string, bio: string): Promise<FixedProfileResponse> {
+    const normalizedBio = bio.trim();
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    user.bio = normalizedBio.slice(0, 280);
+    await user.save();
+
+    return buildFixedProfile(user);
   }
 };
