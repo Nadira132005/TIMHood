@@ -1,19 +1,21 @@
 import fs from 'fs';
 import path from 'path';
 
+type DatasetFeature = {
+  geometryId: number;
+  attributes: {
+    db_id: number;
+    Eticheta: string;
+  };
+  geometry: {
+    type: 'Polygon';
+    coordinates: number[][][];
+  };
+};
+
 type FeatureCollection = {
   type: 'FeatureCollection';
-  features: Array<{
-    geometryId: number;
-    attributes: {
-      db_id: number;
-      Eticheta: string;
-    };
-    geometry: {
-      type: 'Polygon';
-      coordinates: number[][][];
-    };
-  }>;
+  features: DatasetFeature[];
 };
 
 export type LngLat = [number, number];
@@ -66,9 +68,19 @@ function prettifyLabel(value: string): string {
     .trim();
 }
 
-function readDataset(): FeatureCollection {
+function readDataset(): DatasetFeature[] {
   const filePath = path.resolve(__dirname, '../../../neighbourhoods.json');
-  return JSON.parse(fs.readFileSync(filePath, 'utf8')) as FeatureCollection;
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as FeatureCollection | DatasetFeature[];
+
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+
+  if (Array.isArray(raw.features)) {
+    return raw.features;
+  }
+
+  throw new Error('Neighborhood dataset has an unsupported format.');
 }
 
 function getBoundsFromRing(ring: LngLat[]): Bounds {
@@ -107,13 +119,13 @@ function pointInRing([lng, lat]: LngLat, ring: LngLat[]): boolean {
 }
 
 function buildSeeds(): NeighborhoodSeed[] {
-  const dataset = readDataset();
-  const allCoordinates = dataset.features.flatMap((feature) => feature.geometry.coordinates.flat());
+  const features = readDataset();
+  const allCoordinates = features.flatMap((feature) => feature.geometry.coordinates.flat());
   const cityBounds = getBoundsFromRing(allCoordinates as LngLat[]);
   const cityWidth = cityBounds.maxLng - cityBounds.minLng || 1;
   const cityHeight = cityBounds.maxLat - cityBounds.minLat || 1;
 
-  return dataset.features.map((feature) => {
+  return features.map((feature) => {
     const name = prettifyLabel(feature.attributes.Eticheta);
     const slug = buildSlug(name);
     const polygons = feature.geometry.coordinates.map((ring) => ring.map(([lng, lat]) => [lng, lat] as LngLat));

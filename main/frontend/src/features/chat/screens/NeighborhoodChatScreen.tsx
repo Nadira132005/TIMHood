@@ -16,6 +16,7 @@ import { apiGet, apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
+import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
 import { toImageUri } from '../../../shared/utils/images';
@@ -91,6 +92,8 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
   const [relationship, setRelationship] = useState<RelationshipResponse['status']>('none');
   const [directChat, setDirectChat] = useState<DirectChatResponse | null>(null);
   const [directChatTarget, setDirectChatTarget] = useState<NeighborhoodChatMessage | null>(null);
+  const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
+  const [viewerTitle, setViewerTitle] = useState<string>('Photo');
 
   useEffect(() => {
     let mounted = true;
@@ -311,6 +314,11 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
     setError(null);
   }
 
+  function openImageViewer(imageUri: string, title?: string) {
+    setViewerImageUri(imageUri);
+    setViewerTitle(title || 'Photo');
+  }
+
   const showingDirectChat = Boolean(directChat && directChatTarget);
 
   return (
@@ -339,7 +347,11 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
                 style={[styles.messageBubble, message.isOwnMessage ? styles.ownBubble : styles.otherBubble]}
               >
                 {message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}
-                {message.imageBase64 ? <Image source={{ uri: message.imageBase64 }} style={styles.messageImage} /> : null}
+                {message.imageBase64 ? (
+                  <Pressable onPress={() => openImageViewer(message.imageBase64!, 'Private photo')}>
+                    <Image source={{ uri: message.imageBase64 }} style={styles.messageImage} />
+                  </Pressable>
+                ) : null}
               </View>
             ))}
           </ScrollView>
@@ -379,7 +391,11 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
                 <View style={[styles.messageBubble, message.isOwnMessage ? styles.ownBubble : styles.otherBubble]}>
                   {!message.isOwnMessage ? <Text style={styles.senderName}>{message.userName}</Text> : null}
                   {message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}
-                  {message.imageBase64 ? <Image source={{ uri: message.imageBase64 }} style={styles.messageImage} /> : null}
+                  {message.imageBase64 ? (
+                    <Pressable onPress={() => openImageViewer(message.imageBase64!, message.userName)}>
+                      <Image source={{ uri: message.imageBase64 }} style={styles.messageImage} />
+                    </Pressable>
+                  ) : null}
                   <Text style={styles.timestamp}>
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
@@ -409,7 +425,9 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{publicProfile.fullName}</Text>
             {publicProfile.photoBase64 ? (
-              <Image source={{ uri: toImageUri(publicProfile.photoBase64)! }} style={styles.profilePhoto} />
+              <Pressable onPress={() => openImageViewer(toImageUri(publicProfile.photoBase64)!, publicProfile.fullName)}>
+                <Image source={{ uri: toImageUri(publicProfile.photoBase64)! }} style={styles.profilePhoto} />
+              </Pressable>
             ) : null}
             <Text style={styles.sheetText}>Age: {publicProfile.age ?? 'Unknown'}</Text>
             <Text style={styles.sheetText}>Neighborhood: {publicProfile.neighborhood || 'Unknown'}</Text>
@@ -442,6 +460,13 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
           </View>
         </View>
       ) : null}
+
+      <ImageViewerModal
+        visible={Boolean(viewerImageUri)}
+        imageUri={viewerImageUri}
+        title={viewerTitle}
+        onClose={() => setViewerImageUri(null)}
+      />
     </ScreenContainer>
   );
 }

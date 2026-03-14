@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View 
 import { apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
+import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { toImageUri } from '../../../shared/utils/images';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
@@ -21,6 +22,7 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
   const [bio, setBio] = useState(profile.bio ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPhotoViewer, setShowPhotoViewer] = useState(false);
 
   async function handleSaveBio() {
     setSaving(true);
@@ -47,7 +49,9 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
 
       <SectionCard title="Identity Profile">
         {profile.photoBase64 ? (
-          <Image source={{ uri: toImageUri(profile.photoBase64)! }} style={styles.avatar} />
+          <Pressable onPress={() => setShowPhotoViewer(true)}>
+            <Image source={{ uri: toImageUri(profile.photoBase64)! }} style={styles.avatar} />
+          </Pressable>
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarPlaceholderText}>
@@ -88,6 +92,13 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
           <Text style={styles.secondaryButtonText}>Change address and neighborhood</Text>
         </Pressable>
       </SectionCard>
+
+      <ImageViewerModal
+        visible={showPhotoViewer}
+        imageUri={toImageUri(profile.photoBase64)}
+        title={profile.fullName}
+        onClose={() => setShowPhotoViewer(false)}
+      />
     </ScreenContainer>
   );
 }

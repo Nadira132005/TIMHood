@@ -16,6 +16,7 @@ import { apiGet, apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
+import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { TopBar } from '../../../shared/ui/TopBar';
 import { toImageUri } from '../../../shared/utils/images';
 
@@ -72,6 +73,8 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
+  const [viewerTitle, setViewerTitle] = useState('Photo');
 
   async function load() {
     setBusy(true);
@@ -186,6 +189,11 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
     }
   }
 
+  function openImageViewer(imageUri: string, title?: string) {
+    setViewerImageUri(imageUri);
+    setViewerTitle(title || 'Photo');
+  }
+
   return (
     <ScreenContainer scroll={false}>
       <TopBar
@@ -228,7 +236,11 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
                 <View style={[styles.messageBubble, message.isOwnMessage ? styles.ownBubble : styles.otherBubble]}>
                   {!message.isOwnMessage ? <Text style={styles.senderName}>{message.userName}</Text> : null}
                   {message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}
-                  {message.imageBase64 ? <Image source={{ uri: message.imageBase64 }} style={styles.messageImage} /> : null}
+                  {message.imageBase64 ? (
+                    <Pressable onPress={() => openImageViewer(message.imageBase64!, message.userName)}>
+                      <Image source={{ uri: message.imageBase64 }} style={styles.messageImage} />
+                    </Pressable>
+                  ) : null}
                   <Text style={styles.timestamp}>
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
@@ -293,6 +305,13 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
           </View>
         </View>
       ) : null}
+
+      <ImageViewerModal
+        visible={Boolean(viewerImageUri)}
+        imageUri={viewerImageUri}
+        title={viewerTitle}
+        onClose={() => setViewerImageUri(null)}
+      />
     </ScreenContainer>
   );
 }
