@@ -73,3 +73,6 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - NFC hardware is marked as optional so the app can still install on devices without NFC
 - Testing requires a real Android phone with NFC; emulators generally do not expose real NFC hardware
 - The current working read path uses `CAN + PACE`; the CEI authentication PIN is not yet part of the successful native flow
+
+cd /Users/sergiubodrogean/Desktop/2026/TIMHood/android
+./gradlew assembleDebug
