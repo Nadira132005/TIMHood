@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -43,6 +44,47 @@ type CardAccessSummary = {
   paceLikely: boolean;
 };
 
+type DirSummary = {
+  records: string[];
+  aidLabels: string[];
+};
+
+type Pkcs15Summary = {
+  steps: string[];
+};
+
+type CivPivSummary = {
+  steps: string[];
+  nameHints: string[];
+};
+
+type AidSweepSummary = {
+  steps: string[];
+  matchedAids: string[];
+};
+
+type SecureMessagingSummary = {
+  steps: string[];
+  nonceHex?: string;
+};
+
+type NativePaceSummary = {
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  documentNumber?: string;
+  issuingState?: string;
+  nationality?: string;
+  dateOfBirth?: string;
+  dateOfExpiry?: string;
+};
+
+type NativePaceModule = {
+  readNameWithPace(can: string): Promise<NativePaceSummary>;
+};
+
+const nativePaceModule = (NativeModules.CeiNativeReader ?? null) as NativePaceModule | null;
+
 function App() {
   return (
     <SafeAreaProvider>
@@ -62,6 +104,13 @@ function AppContent() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [apduResults, setApduResults] = useState<ApduResult[]>([]);
   const [cardAccess, setCardAccess] = useState<CardAccessSummary | null>(null);
+  const [dirSummary, setDirSummary] = useState<DirSummary | null>(null);
+  const [pkcs15Summary, setPkcs15Summary] = useState<Pkcs15Summary | null>(null);
+  const [civPivSummary, setCivPivSummary] = useState<CivPivSummary | null>(null);
+  const [aidSweepSummary, setAidSweepSummary] = useState<AidSweepSummary | null>(null);
+  const [secureMessagingSummary, setSecureMessagingSummary] =
+    useState<SecureMessagingSummary | null>(null);
+  const [nativePaceSummary, setNativePaceSummary] = useState<NativePaceSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [customApdu, setCustomApdu] = useState('00A4040C07A0000002471001');
   const [credentials, setCredentials] = useState<AccessCredentials>({
@@ -125,6 +174,13 @@ function AppContent() {
     setError(null);
     setApduResults([]);
     setCardAccess(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
+    setSecureMessagingSummary(null);
+    setNativePaceSummary(null);
+    setSecureMessagingSummary(null);
 
     try {
       await NfcManager.requestTechnology(NfcTech.IsoDep);
@@ -159,6 +215,12 @@ function AppContent() {
 
     setBusy(true);
     setError(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
+    setSecureMessagingSummary(null);
+    setNativePaceSummary(null);
 
     try {
       await NfcManager.requestTechnology(NfcTech.IsoDep);
@@ -192,6 +254,10 @@ function AppContent() {
 
     setBusy(true);
     setError(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
 
     try {
       await NfcManager.requestTechnology(NfcTech.IsoDep);
@@ -261,6 +327,11 @@ function AppContent() {
     setBusy(true);
     setError(null);
     setCardAccess(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setSecureMessagingSummary(null);
+    setAidSweepSummary(null);
 
     try {
       await NfcManager.requestTechnology(NfcTech.IsoDep);
@@ -342,6 +413,546 @@ function AppContent() {
     } finally {
       setBusy(false);
       cancelTechnologyRequest();
+    }
+  }
+
+  async function handleDiscoverApplets() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setCardAccess(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const transcript: ApduResult[] = [];
+      const selectMf = await sendApdu('SELECT MF', [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x3f, 0x00]);
+      transcript.push(selectMf);
+
+      if (!selectMf.ok) {
+        throw new Error(`MF select failed with SW ${selectMf.sw}.`);
+      }
+
+      const selectEfDir = await sendApdu('SELECT EF.DIR', [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x2f, 0x00]);
+      transcript.push(selectEfDir);
+
+      if (!selectEfDir.ok) {
+        throw new Error(`EF.DIR select failed with SW ${selectEfDir.sw}.`);
+      }
+
+      const records: string[] = [];
+      for (let record = 1; record <= 8; record += 1) {
+        const result = await sendApdu(`READ RECORD ${record}`, [0x00, 0xb2, record, 0x04, 0x00]);
+        transcript.push(result);
+
+        if (!result.ok) {
+          if (result.sw === '6A83' || result.sw === '6A82') {
+            break;
+          }
+          continue;
+        }
+
+        const recordHex = stripStatusWord(result.responseHex);
+        if (recordHex.length > 0) {
+          records.push(recordHex);
+        }
+      }
+
+      const summary = summarizeDir(records);
+
+      setLastTag(tag);
+      setApduResults(transcript);
+      setDirSummary(summary);
+      setAnalysis({
+        headline: summary.aidLabels.length > 0
+          ? 'Applet discovery succeeded'
+          : 'Applet discovery did not reveal AIDs yet',
+        summary:
+          'This step reads EF.DIR to discover application identifiers on the card. Finding the PKI-related AID is the cleanest route toward certificate and name retrieval over NFC.',
+        details: [
+          `Records read: ${summary.records.length}`,
+          summary.aidLabels.length > 0
+            ? `AIDs found: ${summary.aidLabels.length}`
+            : 'No AIDs were extracted from the returned EF.DIR records.',
+        ],
+      });
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
+  async function handleTryUserCertificatePath() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setCardAccess(null);
+    setDirSummary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const transcript: ApduResult[] = [];
+      const steps: string[] = [];
+      const commands: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'SELECT PKCS#15 AID',
+          bytes: [0x00, 0xa4, 0x04, 0x0c, 0x0b, 0xa0, 0x00, 0x00, 0x00, 0x63, 0x50, 0x4b, 0x43, 0x53, 0x2d, 0x31, 0x35],
+        },
+        {
+          label: 'SELECT ODF',
+          bytes: [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x50, 0x31],
+        },
+        {
+          label: 'READ ODF',
+          bytes: [0x00, 0xb0, 0x00, 0x00, 0x40],
+        },
+        {
+          label: 'SELECT CDF',
+          bytes: [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x50, 0x34],
+        },
+        {
+          label: 'READ CDF',
+          bytes: [0x00, 0xb0, 0x00, 0x00, 0x40],
+        },
+      ];
+
+      for (const command of commands) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+        steps.push(`${command.label}: SW ${result.sw}`);
+      }
+
+      setLastTag(tag);
+      setApduResults(transcript);
+      setPkcs15Summary({ steps });
+      setAnalysis({
+        headline: 'User certificate path probe completed',
+        summary:
+          'This probe tries a PKCS#15-style user PKI path because the desktop middleware exposes a user-PIN PKI application with certificates and keys.',
+        details: steps,
+      });
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
+  async function handleTryCivPivFlow() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setCardAccess(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setAidSweepSummary(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const transcript: ApduResult[] = [];
+      const steps: string[] = [];
+
+      const baseCommands: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'SELECT ICAO applet',
+          bytes: [0x00, 0xa4, 0x04, 0x0c, 0x07, 0xa0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01],
+        },
+        {
+          label: 'SELECT MF',
+          bytes: [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x3f, 0x00],
+        },
+      ];
+
+      for (const command of baseCommands) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+        steps.push(`${command.label}: SW ${result.sw}`);
+      }
+
+      const civCandidates: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'SELECT PIV AID',
+          bytes: [0x00, 0xa4, 0x04, 0x0c, 0x09, 0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00],
+        },
+        {
+          label: 'GET DATA discovery tag 5FC107',
+          bytes: [0x00, 0xcb, 0x3f, 0xff, 0x05, 0x5c, 0x03, 0x5f, 0xc1, 0x07, 0x00],
+        },
+        {
+          label: 'GET DATA discovery tag 5FC102',
+          bytes: [0x00, 0xcb, 0x3f, 0xff, 0x05, 0x5c, 0x03, 0x5f, 0xc1, 0x02, 0x00],
+        },
+        {
+          label: 'GENERAL AUTHENTICATE bootstrap',
+          bytes: [0x00, 0x87, 0x03, 0x9b, 0x04, 0x7c, 0x02, 0x81, 0x00, 0x00],
+        },
+      ];
+
+      for (const command of civCandidates) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+        steps.push(`${command.label}: SW ${result.sw}`);
+      }
+
+      const pinBytes = credentials.authPin ? encodeAscii(credentials.authPin) : [];
+      if (pinBytes.length > 0) {
+        const verifyPin = await sendApdu('VERIFY PIN (ASCII)', [
+          0x00,
+          0x20,
+          0x00,
+          0x80,
+          pinBytes.length,
+          ...pinBytes,
+        ]);
+        transcript.push(verifyPin);
+        steps.push(`VERIFY PIN (ASCII): SW ${verifyPin.sw}`);
+      } else {
+        steps.push('VERIFY PIN skipped because no 4-digit PIN was entered.');
+      }
+
+      const afterLoginCandidates: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'GET DATA cert tag 5FC105',
+          bytes: [0x00, 0xcb, 0x3f, 0xff, 0x05, 0x5c, 0x03, 0x5f, 0xc1, 0x05, 0x00],
+        },
+        {
+          label: 'GET DATA cert tag 5FC10A',
+          bytes: [0x00, 0xcb, 0x3f, 0xff, 0x05, 0x5c, 0x03, 0x5f, 0xc1, 0x0a, 0x00],
+        },
+      ];
+
+      for (const command of afterLoginCandidates) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+        steps.push(`${command.label}: SW ${result.sw}`);
+      }
+
+      const nameHints = transcript.flatMap(result => extractNameHints(stripStatusWord(result.responseHex)));
+
+      setLastTag(tag);
+      setApduResults(transcript);
+      setCivPivSummary({ steps, nameHints });
+      setAnalysis({
+        headline: 'CIV/PIV flow probe completed',
+        summary:
+          'This probe follows the higher-level middleware model we found in the Linux CIV library: select app, attempt secure/auth steps, then query likely certificate containers.',
+        details: nameHints.length > 0
+          ? [`Readable name-like text found: ${nameHints.join(', ')}`, ...steps]
+          : steps,
+      });
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
+  async function handleAidSweep() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setCardAccess(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const transcript: ApduResult[] = [];
+      const steps: string[] = [];
+      const matchedAids: string[] = [];
+
+      const candidates = [
+        { label: 'ICAO LDS AID', aidHex: 'A0000002471001' },
+        { label: 'PIV AID', aidHex: 'A00000030800001000' },
+        { label: 'PKCS#15 AID', aidHex: 'A000000063504B43532D3135' },
+        { label: 'Gemalto PKI AID', aidHex: 'A000000018434D00' },
+        { label: 'Belgian eID AID', aidHex: 'A000000177504B43532D3135' },
+        { label: 'Romanian CEI hypothesis AID 1', aidHex: 'A0000002472001' },
+        { label: 'Romanian CEI hypothesis AID 2', aidHex: 'A0000002472002' },
+        { label: 'Romanian CEI hypothesis AID 3', aidHex: 'A0000002473001' },
+      ];
+
+      for (const candidate of candidates) {
+        const aidBytes = hexToBytes(candidate.aidHex);
+        const command = [0x00, 0xa4, 0x04, 0x0c, aidBytes.length, ...aidBytes];
+        const result = await sendApdu(`SELECT ${candidate.label}`, command);
+        transcript.push(result);
+        steps.push(`${candidate.label} (${candidate.aidHex}): SW ${result.sw}`);
+
+        if (result.ok) {
+          matchedAids.push(`${candidate.label} (${candidate.aidHex})`);
+        }
+      }
+
+      setLastTag(tag);
+      setApduResults(transcript);
+      setAidSweepSummary({ steps, matchedAids });
+      setAnalysis({
+        headline:
+          matchedAids.length > 0
+            ? 'AID sweep found selectable applications'
+            : 'AID sweep did not reveal a new selectable application',
+        summary:
+          'This checks a short list of likely applet identifiers so we can stop guessing blindly and focus only on applets the card actually accepts.',
+        details:
+          matchedAids.length > 0
+            ? [`Selectable AIDs: ${matchedAids.join(', ')}`, ...steps]
+            : steps,
+      });
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
+  async function handleTryObservedPace() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setCardAccess(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
+    setSecureMessagingSummary(null);
+    setNativePaceSummary(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const transcript: ApduResult[] = [];
+      const steps: string[] = [];
+      let nonceHex: string | undefined;
+      const commands: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'SELECT ICAO applet',
+          bytes: [0x00, 0xa4, 0x04, 0x0c, 0x07, 0xa0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01],
+        },
+        {
+          label: 'SELECT MF',
+          bytes: [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x3f, 0x00],
+        },
+        {
+          label: 'SELECT EF.CardAccess',
+          bytes: [0x00, 0xa4, 0x02, 0x0c, 0x02, 0x01, 0x1c],
+        },
+        {
+          label: 'READ EF.CardAccess chunk #1 from official log',
+          bytes: [0x00, 0xb0, 0x00, 0x00, 0x08],
+        },
+        {
+          label: 'READ EF.CardAccess chunk #2 from official log',
+          bytes: [0x00, 0xb0, 0x00, 0x08, 0x7b],
+        },
+        {
+          label: 'MSE:Set AT observed in official log',
+          bytes: [
+            0x00, 0x22, 0xc1, 0xa4, 0x0f, 0x80, 0x0a, 0x04, 0x00, 0x7f, 0x00, 0x07,
+            0x02, 0x02, 0x04, 0x02, 0x04, 0x83, 0x01, 0x02,
+          ],
+        },
+        {
+          label: 'GENERAL AUTHENTICATE nonce request (live)',
+          bytes: [0x10, 0x86, 0x00, 0x00, 0x02, 0x7c, 0x00, 0x00],
+        },
+        {
+          label: 'GENERAL AUTHENTICATE nonce-map from official log',
+          bytes: [
+            0x00, 0x86, 0x00, 0x00, 0x0c, 0x7c, 0x0a, 0x85, 0x08, 0x64, 0x5d, 0x26,
+            0xaf, 0x84, 0x5c, 0x13, 0xc4, 0x00,
+          ],
+        },
+        {
+          label: 'GENERAL AUTHENTICATE terminal key #1 from official log',
+          bytes: [
+            0x10, 0x86, 0x00, 0x00, 0x45, 0x7c, 0x43, 0x81, 0x41, 0x04, 0x79, 0x01,
+            0x25, 0x61, 0x4c, 0x55, 0x55, 0x2e, 0xc8, 0xae, 0x15, 0x65, 0xf5, 0x8f,
+            0xe0, 0xfd, 0x17, 0xbe, 0x30, 0x49, 0xbb, 0x5a, 0x75, 0x24, 0xe3, 0x04,
+            0x2d, 0x27, 0x07, 0xba, 0x96, 0xc7, 0x13, 0xa1, 0x47, 0x4b, 0x88, 0x64,
+            0xad, 0x4d, 0x05, 0xea, 0x58, 0x1b, 0x9c, 0x8e, 0xc1, 0x9d, 0xa7, 0xf5,
+            0x82, 0xc8, 0xf0, 0xae, 0x6f, 0x9a, 0xce, 0x0f, 0xd2, 0x03, 0x73, 0x65,
+            0x23, 0xec, 0x00,
+          ],
+        },
+        {
+          label: 'GENERAL AUTHENTICATE terminal key #2 from official log',
+          bytes: [
+            0x10, 0x86, 0x00, 0x00, 0x45, 0x7c, 0x43, 0x83, 0x41, 0x04, 0x1f, 0xd3,
+            0x35, 0x92, 0xfe, 0x77, 0x56, 0x43, 0x71, 0x57, 0xbd, 0x32, 0xc4, 0x12,
+            0xce, 0x22, 0x0f, 0xe9, 0xe1, 0xf2, 0x8b, 0xa1, 0x5a, 0xef, 0x39, 0x80,
+            0x78, 0xdd, 0x61, 0x81, 0xc0, 0xa9, 0x09, 0xf5, 0x02, 0x8d, 0xda, 0x9a,
+            0x9c, 0xba, 0x56, 0x7c, 0x7f, 0xad, 0xd0, 0x94, 0xf6, 0x3c, 0x59, 0xdb,
+            0x33, 0x33, 0xe8, 0xa8, 0x0a, 0x96, 0xba, 0xbd, 0x77, 0x6d, 0xa2, 0x77,
+            0x2f, 0x71, 0x00,
+          ],
+        },
+        {
+          label: 'Protected VERIFY / auth step from official log',
+          bytes: [
+            0x0c, 0x20, 0x00, 0x03, 0x1d, 0x87, 0x11, 0x01, 0xc1, 0xff, 0x49, 0xd2,
+            0x78, 0x56, 0xc6, 0xf0, 0xc1, 0x32, 0xb3, 0x07, 0x15, 0xf7, 0x6f, 0xba,
+            0x8e, 0x08, 0x3f, 0xc9, 0xd3, 0xd7, 0x3f, 0xe1, 0x34, 0xb9, 0x00,
+          ],
+        },
+        {
+          label: 'Protected SELECT app/file from official log',
+          bytes: [
+            0x0c, 0xa4, 0x04, 0x0c, 0x20, 0x87, 0x11, 0x01, 0x97, 0xdf, 0x7e, 0xeb,
+            0x56, 0xc8, 0x77, 0xa8, 0x99, 0xeb, 0x21, 0xb5, 0x56, 0xfd, 0xc9, 0xaa,
+            0x97, 0x01, 0x00, 0x8e, 0x08, 0xcb, 0x57, 0x3a, 0x43, 0x1b, 0x83, 0x04,
+            0x85, 0x00,
+          ],
+        },
+        {
+          label: 'Protected SELECT file #1 from official log',
+          bytes: [
+            0x0c, 0xa4, 0x02, 0x0c, 0x1d, 0x87, 0x11, 0x01, 0xcf, 0xa9, 0x41, 0x90,
+            0x0f, 0xdc, 0x59, 0xbd, 0xe7, 0x32, 0x9c, 0xd2, 0x62, 0x73, 0xec, 0xf4,
+            0x8e, 0x08, 0xc4, 0xaa, 0xe2, 0xf3, 0x62, 0x39, 0xdd, 0xcb, 0x00,
+          ],
+        },
+        {
+          label: 'Protected READ from official log',
+          bytes: [
+            0x0c, 0xb0, 0x82, 0x00, 0x0d, 0x97, 0x01, 0x08, 0x8e, 0x08, 0x1f, 0xc0,
+            0x20, 0x90, 0x1f, 0x1b, 0xc0, 0x0a, 0x00,
+          ],
+        },
+      ];
+
+      for (const command of commands) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+        steps.push(`${command.label}: SW ${result.sw}`);
+
+        if (command.label === 'GENERAL AUTHENTICATE nonce request (live)' && result.ok) {
+          const value = extractPaceNonce(stripStatusWord(result.responseHex));
+          if (value) {
+            nonceHex = value;
+            steps.push(`Live PACE nonce candidate: ${value}`);
+          }
+        }
+      }
+
+      setLastTag(tag);
+      setApduResults(transcript);
+      setSecureMessagingSummary({ steps, nonceHex });
+      setAnalysis({
+        headline: 'Observed PACE bootstrap replay completed',
+        summary:
+          'This replays the official app sequence around CardAccess, PACE setup, and the first protected commands. Dynamic values are session-specific, so the SW pattern matters more than exact data.',
+        details: nonceHex ? [`Live PACE nonce candidate: ${nonceHex}`, ...steps] : steps,
+      });
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
+  async function handleNativePaceRead() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    if (!nativePaceModule || Platform.OS !== 'android') {
+      setError('The native Android PACE module is not available in this build.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setApduResults([]);
+    setCardAccess(null);
+    setDirSummary(null);
+    setPkcs15Summary(null);
+    setCivPivSummary(null);
+    setAidSweepSummary(null);
+    setSecureMessagingSummary(null);
+    setNativePaceSummary(null);
+
+    try {
+      const result = await nativePaceModule.readNameWithPace(credentials.can);
+      setNativePaceSummary(result);
+      setAnalysis({
+        headline: 'Native PACE read completed',
+        summary:
+          'The Android native reader attempted JMRTD-style PACE with the CAN and then tried to read DG1 for holder identity data.',
+        details: [
+          `Full name: ${result.fullName || 'not exposed'}`,
+          result.documentNumber ? `Document number: ${result.documentNumber}` : 'Document number not exposed.',
+          result.issuingState ? `Issuing state: ${result.issuingState}` : 'Issuing state not exposed.',
+          result.nationality ? `Nationality: ${result.nationality}` : 'Nationality not exposed.',
+          result.dateOfBirth ? `Date of birth: ${result.dateOfBirth}` : 'Date of birth not exposed.',
+          result.dateOfExpiry ? `Date of expiry: ${result.dateOfExpiry}` : 'Date of expiry not exposed.',
+        ],
+      });
+    } catch (nativeError) {
+      setError(getErrorMessage(nativeError));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -460,6 +1071,66 @@ function AppContent() {
           </Pressable>
           <Pressable
             disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleDiscoverApplets}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Discover Applets</Text>
+          </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleTryUserCertificatePath}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Try User Cert Path</Text>
+          </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleTryCivPivFlow}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Try CIV/PIV Flow</Text>
+          </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleAidSweep}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Sweep AIDs</Text>
+          </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleTryObservedPace}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Replay Observed PACE</Text>
+          </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleNativePaceRead}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Native PACE Name</Text>
+          </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
             onPress={handleInspectChip}
             style={({ pressed }) => [
               styles.secondaryButton,
@@ -505,6 +1176,137 @@ function AppContent() {
               </Text>
             ))}
             <Text style={styles.raw}>{cardAccess.rawHex}</Text>
+          </View>
+        ) : null}
+
+        {dirSummary ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>EF.DIR</Text>
+            <Text style={styles.cardText}>
+              EF.DIR can reveal application identifiers present on the card. A
+              PKI-related AID here would give us a concrete NFC target for
+              certificate retrieval.
+            </Text>
+            {dirSummary.aidLabels.map(label => (
+              <Text key={label} style={styles.detail}>
+                {`\u2022 ${label}`}
+              </Text>
+            ))}
+            {dirSummary.records.map(record => (
+              <Text key={record} style={styles.raw}>
+                {record}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {pkcs15Summary ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>User PKI Probe</Text>
+            <Text style={styles.cardText}>
+              This tries a PKCS#15-style certificate path that could explain the
+              desktop user-PIN certificate view.
+            </Text>
+            {pkcs15Summary.steps.map(step => (
+              <Text key={step} style={styles.detail}>
+                {`\u2022 ${step}`}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {civPivSummary ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>CIV/PIV Probe</Text>
+            <Text style={styles.cardText}>
+              This follows the Linux middleware shape more closely: connect,
+              select an application, attempt authentication, and query likely
+              certificate tags.
+            </Text>
+            {civPivSummary.nameHints.map(hint => (
+              <Text key={hint} style={styles.detail}>
+                {`\u2022 Name hint: ${hint}`}
+              </Text>
+            ))}
+            {civPivSummary.steps.map(step => (
+              <Text key={step} style={styles.detail}>
+                {`\u2022 ${step}`}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {aidSweepSummary ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>AID Sweep</Text>
+            <Text style={styles.cardText}>
+              This probes a short list of likely applet identifiers and reports
+              only what the card actually accepts.
+            </Text>
+            {aidSweepSummary.matchedAids.map(match => (
+              <Text key={match} style={styles.detail}>
+                {`\u2022 Selectable: ${match}`}
+              </Text>
+            ))}
+            {aidSweepSummary.steps.map(step => (
+              <Text key={step} style={styles.detail}>
+                {`\u2022 ${step}`}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {secureMessagingSummary ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Protected Read Probe</Text>
+            <Text style={styles.cardText}>
+              This replays the official app sequence around CardAccess, PACE,
+              and the first protected commands. Dynamic values are tied to a
+              live session, so the SW pattern matters more than exact data.
+            </Text>
+            {secureMessagingSummary.steps.map(step => (
+              <Text key={step} style={styles.detail}>
+                {`\u2022 ${step}`}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {nativePaceSummary ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Native PACE Result</Text>
+            <Text style={styles.cardText}>
+              This path runs a native Android PACE attempt and then tries to
+              read DG1 through JMRTD-style APIs instead of replaying raw APDUs.
+            </Text>
+            <Text style={styles.detail}>{`\u2022 Full name: ${nativePaceSummary.fullName}`}</Text>
+            <Text style={styles.detail}>{`\u2022 First name: ${nativePaceSummary.firstName}`}</Text>
+            <Text style={styles.detail}>{`\u2022 Last name: ${nativePaceSummary.lastName}`}</Text>
+            {nativePaceSummary.documentNumber ? (
+              <Text style={styles.detail}>
+                {`\u2022 Document number: ${nativePaceSummary.documentNumber}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.issuingState ? (
+              <Text style={styles.detail}>
+                {`\u2022 Issuing state: ${nativePaceSummary.issuingState}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.nationality ? (
+              <Text style={styles.detail}>
+                {`\u2022 Nationality: ${nativePaceSummary.nationality}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.dateOfBirth ? (
+              <Text style={styles.detail}>
+                {`\u2022 Date of birth: ${nativePaceSummary.dateOfBirth}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.dateOfExpiry ? (
+              <Text style={styles.detail}>
+                {`\u2022 Date of expiry: ${nativePaceSummary.dateOfExpiry}`}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -783,6 +1585,56 @@ function summarizeCardAccess(bytes: number[]): CardAccessSummary {
   };
 }
 
+function summarizeDir(records: string[]): DirSummary {
+  const aidLabels = Array.from(new Set(records.flatMap(extractAidsFromRecord))).map(
+    aid => `AID ${aid}`,
+  );
+
+  return {
+    records,
+    aidLabels,
+  };
+}
+
+function extractPaceNonce(responseHex: string): string | null {
+  const bytes = hexToBytes(responseHex);
+  const tlvs = parseSimpleTlv(bytes);
+
+  for (const item of tlvs) {
+    if (item.tag === '7C') {
+      const nested = parseSimpleTlv(hexToBytes(item.valueHex));
+      const nonce = nested.find(candidate => candidate.tag === '80');
+      if (nonce) {
+        return nonce.valueHex;
+      }
+    }
+  }
+
+  const directNonce = tlvs.find(item => item.tag === '80');
+  return directNonce ? directNonce.valueHex : null;
+}
+
+function extractAidsFromRecord(recordHex: string): string[] {
+  const bytes = hexToBytes(recordHex);
+  const aids: string[] = [];
+
+  for (let index = 0; index < bytes.length - 1; index += 1) {
+    if (bytes[index] !== 0x4f) {
+      continue;
+    }
+
+    const length = bytes[index + 1];
+    const start = index + 2;
+    const end = start + length;
+    if (end <= bytes.length) {
+      aids.push(bytesToHex(bytes.slice(start, end)));
+      index = end - 1;
+    }
+  }
+
+  return aids;
+}
+
 function parseSimpleTlv(bytes: number[]): Array<{
   tag: string;
   length: number;
@@ -928,12 +1780,41 @@ function decodeOid(oidHex: string): string {
   return values.join('.');
 }
 
+function extractNameHints(responseHex: string): string[] {
+  if (responseHex.length < 4) {
+    return [];
+  }
+
+  const bytes = hexToBytes(responseHex);
+  const ascii = bytes
+    .map(byte => (byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : ' '))
+    .join(' ');
+
+  const matches = ascii.match(/[A-Z][A-Z -]{3,}/g) ?? [];
+
+  return Array.from(
+    new Set(
+      matches
+        .map(match => match.replace(/\s+/g, ' ').trim())
+        .filter(match => match.length >= 5),
+    ),
+  ).slice(0, 5);
+}
+
 function maskDigits(value: string): string {
   return value.replace(/\d/g, '*');
 }
 
+function encodeAscii(value: string): number[] {
+  return value.split('').map(char => char.charCodeAt(0));
+}
+
 function bytesToHex(bytes: number[]): string {
   return bytes.map(byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function stripStatusWord(responseHex: string): string {
+  return responseHex.length >= 4 ? responseHex.slice(0, -4) : responseHex;
 }
 
 function hexToBytes(value: string): number[] {

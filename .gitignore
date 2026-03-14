@@ -73,3 +73,12 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Local research / reverse-engineering artifacts
+.tmp/
+cardcf.bin
+cardid.bin
+idplug-classic-*.deb
+idplug-macos-*/
+ro-cei-reader*.apk
+ro-cei-reader*.log
