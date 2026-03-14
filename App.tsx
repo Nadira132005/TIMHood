@@ -39,6 +39,7 @@ type ApduResult = {
 type CardAccessSummary = {
   rawHex: string;
   oidLabels: string[];
+  tlvLabels: string[];
   paceLikely: boolean;
 };
 
@@ -251,6 +252,99 @@ function AppContent() {
     }
   }
 
+  async function handleInspectChip() {
+    if (!isValidCan(credentials.can)) {
+      setError('Enter the 6-digit CAN printed on the front of the Romanian CEI.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setCardAccess(null);
+
+    try {
+      await NfcManager.requestTechnology(NfcTech.IsoDep);
+
+      const tag = await NfcManager.getTag();
+      if (!tag) {
+        throw new Error('No NFC tag was returned by Android.');
+      }
+
+      const transcript: ApduResult[] = [];
+      const baseCommands: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'SELECT ICAO applet',
+          bytes: [0x00, 0xa4, 0x04, 0x0c, 0x07, 0xa0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01],
+        },
+        {
+          label: 'SELECT MF',
+          bytes: [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x3f, 0x00],
+        },
+        {
+          label: 'SELECT EF.CardAccess',
+          bytes: [0x00, 0xa4, 0x00, 0x0c, 0x02, 0x01, 0x1c],
+        },
+      ];
+
+      for (const command of baseCommands) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+      }
+
+      const cardAccessRead = await sendApdu('READ EF.CardAccess [SFI 1, 16 bytes]', [
+        0x00, 0xb0, 0x81, 0x00, 0x10,
+      ]);
+      transcript.push(cardAccessRead);
+
+      const standardProbes: Array<{ label: string; bytes: number[] }> = [
+        {
+          label: 'SELECT EF.COM',
+          bytes: [0x00, 0xa4, 0x02, 0x0c, 0x02, 0x01, 0x1e],
+        },
+        {
+          label: 'READ EF.COM [offset]',
+          bytes: [0x00, 0xb0, 0x00, 0x00, 0x20],
+        },
+        {
+          label: 'READ EF.COM [SFI 2]',
+          bytes: [0x00, 0xb0, 0x82, 0x00, 0x20],
+        },
+        {
+          label: 'SELECT DG1',
+          bytes: [0x00, 0xa4, 0x02, 0x0c, 0x02, 0x01, 0x01],
+        },
+        {
+          label: 'READ DG1 [offset]',
+          bytes: [0x00, 0xb0, 0x00, 0x00, 0x20],
+        },
+        {
+          label: 'READ DG1 [SFI 1]',
+          bytes: [0x00, 0xb0, 0x81, 0x00, 0x20],
+        },
+      ];
+
+      for (const command of standardProbes) {
+        const result = await sendApdu(command.label, command.bytes);
+        transcript.push(result);
+      }
+
+      const cardAccessData = cardAccessRead.ok
+        ? hexToBytes(cardAccessRead.responseHex.slice(0, -4))
+        : [];
+      const summary = cardAccessData.length > 0 ? summarizeCardAccess(cardAccessData) : null;
+
+      setLastTag(tag);
+      setApduResults(transcript);
+      setCardAccess(summary);
+      setAnalysis(analyzeTag(tag, credentials, transcript, summary));
+    } catch (scanError) {
+      setError(getErrorMessage(scanError));
+    } finally {
+      setBusy(false);
+      cancelTechnologyRequest();
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -364,6 +458,16 @@ function AppContent() {
             ]}>
             <Text style={styles.secondaryButtonText}>Read CardAccess</Text>
           </Pressable>
+          <Pressable
+            disabled={busy || Platform.OS !== 'android' || !isValidCan(credentials.can)}
+            onPress={handleInspectChip}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.secondaryButtonAlt,
+              (pressed || busy || !isValidCan(credentials.can)) && styles.buttonPressed,
+            ]}>
+            <Text style={styles.secondaryButtonText}>Inspect Chip</Text>
+          </Pressable>
         </View>
 
         {analysis ? (
@@ -390,6 +494,11 @@ function AppContent() {
                 ? 'PACE security info appears to be present.'
                 : 'No known PACE OID was recognized in the raw CardAccess bytes.'}
             </Text>
+            {cardAccess.tlvLabels.map(label => (
+              <Text key={label} style={styles.detail}>
+                {`\u2022 ${label}`}
+              </Text>
+            ))}
             {cardAccess.oidLabels.map(label => (
               <Text key={label} style={styles.detail}>
                 {`\u2022 ${label}`}
@@ -403,8 +512,7 @@ function AppContent() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>APDU probe</Text>
             <Text style={styles.cardText}>
-              These commands test whether the chip responds like a standard
-              ICAO e-document over `IsoDep`.
+              These commands show the ordered APDU transcript against the chip.
             </Text>
             {apduResults.map(result => (
               <View key={`${result.label}-${result.commandHex}`} style={styles.apduRow}>
@@ -662,13 +770,101 @@ function summarizeCardAccess(bytes: number[]): CardAccessSummary {
   const rawHex = bytesToHex(bytes);
   const oidHexes = extractOidHexes(bytes);
   const oidLabels = oidHexes.map(formatOidHex);
+  const tlvLabels = parseSimpleTlv(bytes).map(
+    item => `Tag ${item.tag} length ${item.length} value ${item.valueHex}`,
+  );
   const paceLikely = oidLabels.some(label => label.includes('PACE'));
 
   return {
     rawHex,
     oidLabels,
+    tlvLabels,
     paceLikely,
   };
+}
+
+function parseSimpleTlv(bytes: number[]): Array<{
+  tag: string;
+  length: number;
+  valueHex: string;
+}> {
+  const items: Array<{ tag: string; length: number; valueHex: string }> = [];
+  let index = 0;
+
+  while (index < bytes.length) {
+    const { tagBytes, nextIndex: afterTag } = readTag(bytes, index);
+    if (afterTag >= bytes.length) {
+      break;
+    }
+
+    const { length, nextIndex: afterLength } = readLength(bytes, afterTag);
+    const end = afterLength + length;
+    if (end > bytes.length) {
+      break;
+    }
+
+    items.push({
+      tag: bytesToHex(tagBytes),
+      length,
+      valueHex: bytesToHex(bytes.slice(afterLength, end)),
+    });
+
+    index = end;
+  }
+
+  return items;
+}
+
+function readTag(bytes: number[], start: number): {
+  tagBytes: number[];
+  nextIndex: number;
+} {
+  const tagBytes = [bytes[start]];
+  let index = start + 1;
+
+  // BER-TLV high-tag-number form is naturally bitwise.
+  // eslint-disable-next-line no-bitwise
+  if ((bytes[start] & 0x1f) === 0x1f) {
+    while (index < bytes.length) {
+      const current = bytes[index];
+      tagBytes.push(current);
+      index += 1;
+      // eslint-disable-next-line no-bitwise
+      if ((current & 0x80) === 0) {
+        break;
+      }
+    }
+  }
+
+  return { tagBytes, nextIndex: index };
+}
+
+function readLength(bytes: number[], start: number): {
+  length: number;
+  nextIndex: number;
+} {
+  const first = bytes[start];
+
+  // BER-TLV length parsing is naturally bitwise.
+  // eslint-disable-next-line no-bitwise
+  if ((first & 0x80) === 0) {
+    return {
+      length: first,
+      nextIndex: start + 1,
+    };
+  }
+
+  // eslint-disable-next-line no-bitwise
+  const octetCount = first & 0x7f;
+  let length = 0;
+  let index = start + 1;
+
+  for (let offset = 0; offset < octetCount && index < bytes.length; offset += 1) {
+    length = length * 256 + bytes[index];
+    index += 1;
+  }
+
+  return { length, nextIndex: index };
 }
 
 function extractOidHexes(bytes: number[]): string[] {
