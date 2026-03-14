@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   NativeModules,
   Platform,
@@ -77,6 +78,34 @@ type NativePaceSummary = {
   nationality?: string;
   dateOfBirth?: string;
   dateOfExpiry?: string;
+  dg11?: {
+    available: boolean;
+    nameOfHolder?: string;
+    personalNumber?: string;
+    fullDateOfBirth?: string;
+    placeOfBirth?: string;
+    permanentAddress?: string;
+    profession?: string;
+    title?: string;
+    error?: string;
+  };
+  dg12?: {
+    available: boolean;
+    issuingAuthority?: string;
+    dateOfIssue?: string;
+    dateAndTimeOfPersonalization?: string;
+    personalizationSystemSerialNumber?: string;
+    error?: string;
+  };
+  dg2?: {
+    available: boolean;
+    byteLength?: number;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    base64?: string;
+    error?: string;
+  };
 };
 
 type NativePaceModule = {
@@ -939,7 +968,7 @@ function AppContent() {
       setAnalysis({
         headline: 'Native PACE read completed',
         summary:
-          'The Android native reader attempted JMRTD-style PACE with the CAN and then tried to read DG1 for holder identity data.',
+          'The Android native reader attempted JMRTD-style PACE with the CAN and then tried to read DG1 plus additional LDS data groups available after secure access.',
         details: [
           `Full name: ${result.fullName || 'not exposed'}`,
           result.documentNumber ? `Document number: ${result.documentNumber}` : 'Document number not exposed.',
@@ -947,6 +976,15 @@ function AppContent() {
           result.nationality ? `Nationality: ${result.nationality}` : 'Nationality not exposed.',
           result.dateOfBirth ? `Date of birth: ${result.dateOfBirth}` : 'Date of birth not exposed.',
           result.dateOfExpiry ? `Date of expiry: ${result.dateOfExpiry}` : 'Date of expiry not exposed.',
+          result.dg11?.available
+            ? `DG11 available${result.dg11.permanentAddress ? `, address: ${result.dg11.permanentAddress}` : ''}`
+            : `DG11 unavailable${result.dg11?.error ? `: ${result.dg11.error}` : '.'}`,
+          result.dg12?.available
+            ? `DG12 available${result.dg12.issuingAuthority ? `, issuing authority: ${result.dg12.issuingAuthority}` : ''}`
+            : `DG12 unavailable${result.dg12?.error ? `: ${result.dg12.error}` : '.'}`,
+          result.dg2?.available
+            ? `DG2 available${result.dg2.byteLength ? `, byte length: ${result.dg2.byteLength}` : ''}${result.dg2.mimeType ? `, mime: ${result.dg2.mimeType}` : ''}`
+            : `DG2 unavailable${result.dg2?.error ? `: ${result.dg2.error}` : '.'}`,
         ],
       });
     } catch (nativeError) {
@@ -1277,7 +1315,8 @@ function AppContent() {
             <Text style={styles.cardTitle}>Native PACE Result</Text>
             <Text style={styles.cardText}>
               This path runs a native Android PACE attempt and then tries to
-              read DG1 through JMRTD-style APIs instead of replaying raw APDUs.
+              read DG1 and additional LDS data groups through JMRTD-style APIs
+              instead of replaying raw APDUs.
             </Text>
             <Text style={styles.detail}>{`\u2022 Full name: ${nativePaceSummary.fullName}`}</Text>
             <Text style={styles.detail}>{`\u2022 First name: ${nativePaceSummary.firstName}`}</Text>
@@ -1305,6 +1344,99 @@ function AppContent() {
             {nativePaceSummary.dateOfExpiry ? (
               <Text style={styles.detail}>
                 {`\u2022 Date of expiry: ${nativePaceSummary.dateOfExpiry}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.dg11?.available ? (
+              <>
+                <Text style={styles.detail}>{'\u2022 DG11: available'}</Text>
+                {nativePaceSummary.dg11.nameOfHolder ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 holder name: ${nativePaceSummary.dg11.nameOfHolder}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg11.personalNumber ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 personal number: ${nativePaceSummary.dg11.personalNumber}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg11.fullDateOfBirth ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 full date of birth: ${nativePaceSummary.dg11.fullDateOfBirth}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg11.placeOfBirth ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 place of birth: ${nativePaceSummary.dg11.placeOfBirth}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg11.permanentAddress ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 permanent address: ${nativePaceSummary.dg11.permanentAddress}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg11.profession ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 profession: ${nativePaceSummary.dg11.profession}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg11.title ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG11 title: ${nativePaceSummary.dg11.title}`}
+                  </Text>
+                ) : null}
+              </>
+            ) : nativePaceSummary.dg11?.error ? (
+              <Text style={styles.detail}>
+                {`\u2022 DG11 unavailable: ${nativePaceSummary.dg11.error}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.dg12?.available ? (
+              <>
+                <Text style={styles.detail}>{'\u2022 DG12: available'}</Text>
+                {nativePaceSummary.dg12.issuingAuthority ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG12 issuing authority: ${nativePaceSummary.dg12.issuingAuthority}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg12.dateOfIssue ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG12 date of issue: ${nativePaceSummary.dg12.dateOfIssue}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg12.dateAndTimeOfPersonalization ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG12 personalization time: ${nativePaceSummary.dg12.dateAndTimeOfPersonalization}`}
+                  </Text>
+                ) : null}
+                {nativePaceSummary.dg12.personalizationSystemSerialNumber ? (
+                  <Text style={styles.detail}>
+                    {`\u2022 DG12 personalization serial: ${nativePaceSummary.dg12.personalizationSystemSerialNumber}`}
+                  </Text>
+                ) : null}
+              </>
+            ) : nativePaceSummary.dg12?.error ? (
+              <Text style={styles.detail}>
+                {`\u2022 DG12 unavailable: ${nativePaceSummary.dg12.error}`}
+              </Text>
+            ) : null}
+            {nativePaceSummary.dg2?.available ? (
+              <>
+                <Text style={styles.detail}>
+                  {`\u2022 DG2 available${nativePaceSummary.dg2.byteLength ? `, bytes: ${nativePaceSummary.dg2.byteLength}` : ''}${nativePaceSummary.dg2.mimeType ? `, mime: ${nativePaceSummary.dg2.mimeType}` : ''}`}
+                </Text>
+                {nativePaceSummary.dg2.base64 && nativePaceSummary.dg2.mimeType ? (
+                  <Image
+                    source={{
+                      uri: `data:${nativePaceSummary.dg2.mimeType};base64,${nativePaceSummary.dg2.base64}`,
+                    }}
+                    style={styles.portrait}
+                    resizeMode="cover"
+                  />
+                ) : null}
+              </>
+            ) : nativePaceSummary.dg2?.error ? (
+              <Text style={styles.detail}>
+                {`\u2022 DG2 unavailable: ${nativePaceSummary.dg2.error}`}
               </Text>
             ) : null}
           </View>
@@ -1996,6 +2128,16 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
     fontSize: 12,
     lineHeight: 18,
+  },
+  portrait: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#09172a',
+    borderColor: '#2c486f',
+    borderRadius: 16,
+    borderWidth: 1,
+    height: 220,
+    marginTop: 8,
+    width: 176,
   },
 });
 

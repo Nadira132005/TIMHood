@@ -4,6 +4,7 @@ import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import android.os.Bundle
+import android.util.Base64
 import android.util.Log
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.bridge.Arguments
@@ -21,6 +22,10 @@ import org.jmrtd.PassportService
 import org.jmrtd.lds.CardAccessFile
 import org.jmrtd.lds.PACEInfo
 import org.jmrtd.lds.icao.DG1File
+import org.jmrtd.lds.icao.DG2File
+import org.jmrtd.lds.icao.DG11File
+import org.jmrtd.lds.icao.DG12File
+import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.math.BigInteger
 import java.util.concurrent.Executors
@@ -30,6 +35,7 @@ class CeiNativeReaderModule(
 ) : ReactContextBaseJavaModule(reactContext), NfcAdapter.ReaderCallback {
   companion object {
     private const val TAG = "CeiNativeReader"
+    private const val DG2_BLOCK_SIZE = 0x40
   }
 
   private val executor = Executors.newSingleThreadExecutor()
@@ -166,6 +172,14 @@ class CeiNativeReaderModule(
       putString("nationality", mrz.nationality)
       putString("dateOfBirth", mrz.dateOfBirth)
       putString("dateOfExpiry", mrz.dateOfExpiry)
+
+      val dg11Result = readDG11(passportService)
+      val dg12Result = readDG12(passportService)
+      val dg2Result = readDG2(passportService)
+
+      putMap("dg11", dg11Result)
+      putMap("dg12", dg12Result)
+      putMap("dg2", dg2Result)
     } catch (error: CardServiceException) {
       throw IllegalStateException(error.message ?: "Card service error during native PACE.", error)
     } finally {
@@ -195,7 +209,189 @@ class CeiNativeReaderModule(
       adapter.disableReaderMode(activity)
     }
   }
+
+  private fun readDG11(passportService: PassportService) = Arguments.createMap().apply {
+    try {
+      val dg11 = DG11File(passportService.getInputStream(PassportService.EF_DG11))
+      val address = dg11.permanentAddress.joinToString(", ").trim()
+      val placeOfBirth = dg11.placeOfBirth.joinToString(", ").trim()
+
+      putBoolean("available", true)
+      putString("nameOfHolder", dg11.nameOfHolder)
+      if (dg11.personalNumber != null) {
+        putString("personalNumber", dg11.personalNumber)
+      }
+      if (dg11.fullDateOfBirth != null) {
+        putString("fullDateOfBirth", dg11.fullDateOfBirth)
+      }
+      if (placeOfBirth.isNotEmpty()) {
+        putString("placeOfBirth", placeOfBirth)
+      }
+      if (address.isNotEmpty()) {
+        putString("permanentAddress", address)
+      }
+      if (dg11.profession != null) {
+        putString("profession", dg11.profession)
+      }
+      if (dg11.title != null) {
+        putString("title", dg11.title)
+      }
+      Log.d(TAG, "DG11 read succeeded")
+    } catch (error: Throwable) {
+      putBoolean("available", false)
+      putString("error", "${error::class.java.simpleName}: ${error.message ?: "DG11 read failed"}")
+      Log.w(TAG, "DG11 read failed", error)
+    }
+  }
+
+  private fun readDG12(passportService: PassportService) = Arguments.createMap().apply {
+    try {
+      val dg12 = DG12File(passportService.getInputStream(PassportService.EF_DG12))
+      putBoolean("available", true)
+      if (dg12.issuingAuthority != null) {
+        putString("issuingAuthority", dg12.issuingAuthority)
+      }
+      if (dg12.dateOfIssue != null) {
+        putString("dateOfIssue", dg12.dateOfIssue)
+      }
+      if (dg12.dateAndTimeOfPersonalization != null) {
+        putString("dateAndTimeOfPersonalization", dg12.dateAndTimeOfPersonalization)
+      }
+      if (dg12.personalizationSystemSerialNumber != null) {
+        putString("personalizationSystemSerialNumber", dg12.personalizationSystemSerialNumber)
+      }
+      Log.d(TAG, "DG12 read succeeded")
+    } catch (error: Throwable) {
+      putBoolean("available", false)
+      putString("error", "${error::class.java.simpleName}: ${error.message ?: "DG12 read failed"}")
+      Log.w(TAG, "DG12 read failed", error)
+    }
+  }
+
+  private fun readDG2(passportService: PassportService) = Arguments.createMap().apply {
+    try {
+      val dg2Bytes = readFully(passportService.getInputStream(PassportService.EF_DG2, DG2_BLOCK_SIZE))
+      val parsedImage = extractPortraitFromDG2(dg2Bytes)
+      val imageBytes = parsedImage.bytes
+      val mimeType = parsedImage.mimeType
+
+      putBoolean("available", true)
+      putInt("byteLength", imageBytes.size)
+      putString("mimeType", mimeType)
+      if (parsedImage.width != null) {
+        putInt("width", parsedImage.width)
+      }
+      if (parsedImage.height != null) {
+        putInt("height", parsedImage.height)
+      }
+      putString("base64", Base64.encodeToString(imageBytes, Base64.NO_WRAP))
+      Log.d(TAG, "DG2 read succeeded, imageBytes=${imageBytes.size}, mime=$mimeType")
+    } catch (error: Throwable) {
+      putBoolean("available", false)
+      putString("error", "${error::class.java.simpleName}: ${error.message ?: "DG2 read failed"}")
+      Log.w(TAG, "DG2 read failed", error)
+    }
+  }
+
+  private fun extractPortraitFromDG2(dg2Bytes: ByteArray): ExtractedPortrait {
+    try {
+      val dg2 = DG2File(ByteArrayInputStream(dg2Bytes))
+      val faceInfo = dg2.faceInfos.firstOrNull()
+        ?: throw IllegalStateException("DG2 contained no face records.")
+      val faceImage = faceInfo.faceImageInfos.firstOrNull()
+        ?: throw IllegalStateException("DG2 contained no face image.")
+      val imageBytes = readFully(faceImage.imageInputStream)
+
+      return ExtractedPortrait(
+        bytes = imageBytes,
+        mimeType = faceImage.mimeType,
+        width = faceImage.width,
+        height = faceImage.height,
+      )
+    } catch (error: Throwable) {
+      Log.w(TAG, "JMRTD DG2 image parse failed, trying raw marker scan", error)
+    }
+
+    val jpegOffset = indexOfSequence(dg2Bytes, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))
+    if (jpegOffset >= 0) {
+      return ExtractedPortrait(
+        bytes = dg2Bytes.copyOfRange(jpegOffset, dg2Bytes.size),
+        mimeType = "image/jpeg",
+      )
+    }
+
+    val jp2Offset = indexOfSequence(
+      dg2Bytes,
+      byteArrayOf(0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87.toByte(), 0x0A),
+    )
+    if (jp2Offset >= 0) {
+      return ExtractedPortrait(
+        bytes = dg2Bytes.copyOfRange(jp2Offset, dg2Bytes.size),
+        mimeType = "image/jp2",
+      )
+    }
+
+    val codestreamOffset = indexOfSequence(
+      dg2Bytes,
+      byteArrayOf(0xFF.toByte(), 0x4F.toByte(), 0xFF.toByte(), 0x51.toByte()),
+    )
+    if (codestreamOffset >= 0) {
+      return ExtractedPortrait(
+        bytes = dg2Bytes.copyOfRange(codestreamOffset, dg2Bytes.size),
+        mimeType = "image/jp2",
+      )
+    }
+
+    throw IllegalStateException("No embedded portrait image marker was found in DG2.")
+  }
+
+  private fun indexOfSequence(haystack: ByteArray, needle: ByteArray): Int {
+    if (needle.isEmpty() || haystack.size < needle.size) {
+      return -1
+    }
+
+    for (start in 0..haystack.size - needle.size) {
+      var matches = true
+      for (offset in needle.indices) {
+        if (haystack[start + offset] != needle[offset]) {
+          matches = false
+          break
+        }
+      }
+      if (matches) {
+        return start
+      }
+    }
+
+    return -1
+  }
+
+  private fun readFully(input: InputStream): ByteArray {
+    input.use { stream ->
+      val buffer = ByteArray(4096)
+      val output = mutableListOf<Byte>()
+
+      while (true) {
+        val count = stream.read(buffer)
+        if (count <= 0) {
+          break
+        }
+        for (index in 0 until count) {
+          output.add(buffer[index])
+        }
+      }
+
+      return output.toByteArray()
+    }
+  }
 }
+
+private data class ExtractedPortrait(
+  val bytes: ByteArray,
+  val mimeType: String,
+  val width: Int? = null,
+  val height: Int? = null,
+)
 
 private class AndroidIsoDepCardService(
   private val isoDep: IsoDep,
