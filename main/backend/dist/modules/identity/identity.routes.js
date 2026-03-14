@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.identityRouter = void 0;
+const express_1 = require("express");
+const require_auth_1 = require("../../shared/middleware/require-auth");
+const async_handler_1 = require("../../shared/utils/async-handler");
+const identity_controller_1 = require("./identity.controller");
+exports.identityRouter = (0, express_1.Router)();
+exports.identityRouter.use(require_auth_1.requireAuth);
+exports.identityRouter.get('/proof-status', (0, async_handler_1.asyncHandler)(identity_controller_1.identityController.getProofStatus));
+exports.identityRouter.post('/proof-of-work', (0, async_handler_1.asyncHandler)(identity_controller_1.identityController.submitProofOfWork));
+exports.identityRouter.put('/locations', (0, async_handler_1.asyncHandler)(identity_controller_1.identityController.upsertLocations));

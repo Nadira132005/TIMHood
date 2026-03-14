@@ -1,0 +1,326 @@
+import mongoose, { Model, Schema } from 'mongoose';
+
+import {
+  CommunityAccessModes,
+  CommunityRoles,
+  CommunityStates,
+  DecisionStatuses,
+  MembershipStatuses,
+  PublishModes,
+  ReplyModes
+} from '../../shared/constants/enums';
+
+type GeoPoint = { type: 'Point'; coordinates: [number, number] };
+
+type GeoPolygon = { type: 'Polygon'; coordinates: number[][][] };
+
+interface ICommunity {
+  name: string;
+  slug: string;
+  description?: string;
+  created_by_user_id: mongoose.Types.ObjectId;
+  visibility: 'public' | 'private';
+  state: (typeof CommunityStates)[number];
+  members_count: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface ICommunitySettings {
+  community_id: mongoose.Types.ObjectId;
+  waiting_room_enabled: boolean;
+  access_mode: (typeof CommunityAccessModes)[number];
+  publish_mode: (typeof PublishModes)[number];
+  reply_mode: (typeof ReplyModes)[number];
+  allow_anonymous_participation: boolean;
+  posts_enabled: boolean;
+  events_enabled: boolean;
+  polls_enabled: boolean;
+  pings_enabled: boolean;
+  services_enabled: boolean;
+  daily_riddle_enabled: boolean;
+  ping_monthly_limit_per_user?: number;
+  updated_by_user_id: mongoose.Types.ObjectId;
+  updated_at: Date;
+}
+
+interface ICommunityMembership {
+  community_id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
+  role: (typeof CommunityRoles)[number];
+  status: (typeof MembershipStatuses)[number];
+  anonymous_alias?: string;
+  invited_by_user_id?: mongoose.Types.ObjectId;
+  approved_by_user_id?: mongoose.Types.ObjectId;
+  joined_at?: Date;
+  left_at?: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface ICommunityInvite {
+  community_id: mongoose.Types.ObjectId;
+  inviter_user_id: mongoose.Types.ObjectId;
+  invitee_user_id: mongoose.Types.ObjectId;
+  status: 'pending' | 'accepted' | 'declined' | 'expired' | 'revoked';
+  expires_at: Date;
+  responded_at?: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface IJoinRequest {
+  community_id: mongoose.Types.ObjectId;
+  requester_user_id: mongoose.Types.ObjectId;
+  message?: string;
+  status: (typeof DecisionStatuses)[number];
+  decided_by_user_id?: mongoose.Types.ObjectId;
+  decided_at?: Date;
+  decision_reason?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface IPublishRequest {
+  community_id: mongoose.Types.ObjectId;
+  requester_user_id: mongoose.Types.ObjectId;
+  content_type: 'post' | 'event' | 'ping' | 'service';
+  payload_snapshot: Record<string, unknown>;
+  status: (typeof DecisionStatuses)[number];
+  created_content_type?: 'post' | 'event' | 'ping' | 'service';
+  created_content_id?: mongoose.Types.ObjectId;
+  decided_by_user_id?: mongoose.Types.ObjectId;
+  decided_at?: Date;
+  decision_reason?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface ICommunityAccessPolicy {
+  community_id: mongoose.Types.ObjectId;
+  requires_verification: boolean;
+  location_match_scope: 'home' | 'work' | 'home_or_work';
+  eligibility_mode: 'none' | 'city' | 'radius' | 'polygon';
+  city_codes?: string[];
+  center_point?: GeoPoint;
+  radius_km?: number;
+  polygon?: GeoPolygon;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface ICommunityRecognition {
+  community_id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
+  source_type: 'golden_comment' | 'event_attendance' | 'admin_award';
+  source_id: mongoose.Types.ObjectId;
+  points_delta: number;
+  note?: string;
+  awarded_by_user_id: mongoose.Types.ObjectId;
+  awarded_at: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const communitySchema = new Schema<ICommunity>(
+  {
+    name: { type: String, required: true },
+    slug: { type: String, required: true, unique: true, index: true },
+    description: { type: String },
+    created_by_user_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    visibility: { type: String, enum: ['public', 'private'], default: 'public', required: true },
+    state: { type: String, enum: CommunityStates, default: 'active', required: true },
+    members_count: { type: Number, default: 0, required: true }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+communitySchema.index({ visibility: 1, state: 1 });
+
+const communitySettingsSchema = new Schema<ICommunitySettings>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, unique: true, index: true },
+    waiting_room_enabled: { type: Boolean, default: false, required: true },
+    access_mode: { type: String, enum: CommunityAccessModes, default: 'open', required: true },
+    publish_mode: { type: String, enum: PublishModes, default: 'direct', required: true },
+    reply_mode: { type: String, enum: ReplyModes, default: 'fully_allowed', required: true },
+    allow_anonymous_participation: { type: Boolean, default: false, required: true },
+    posts_enabled: { type: Boolean, default: true, required: true },
+    events_enabled: { type: Boolean, default: true, required: true },
+    polls_enabled: { type: Boolean, default: true, required: true },
+    pings_enabled: { type: Boolean, default: false, required: true },
+    services_enabled: { type: Boolean, default: true, required: true },
+    daily_riddle_enabled: { type: Boolean, default: false, required: true },
+    ping_monthly_limit_per_user: { type: Number },
+    updated_by_user_id: { type: Schema.Types.ObjectId, required: true }
+  },
+  { timestamps: { createdAt: false, updatedAt: 'updated_at' } }
+);
+
+const communityMembershipSchema = new Schema<ICommunityMembership>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    user_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    role: { type: String, enum: CommunityRoles, default: 'member', required: true },
+    status: { type: String, enum: MembershipStatuses, default: 'pending', required: true },
+    anonymous_alias: { type: String },
+    invited_by_user_id: { type: Schema.Types.ObjectId },
+    approved_by_user_id: { type: Schema.Types.ObjectId },
+    joined_at: { type: Date },
+    left_at: { type: Date }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+communityMembershipSchema.index({ community_id: 1, user_id: 1 }, { unique: true });
+communityMembershipSchema.index({ community_id: 1, role: 1, status: 1 });
+communityMembershipSchema.index({ user_id: 1, status: 1 });
+
+const communityInviteSchema = new Schema<ICommunityInvite>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    inviter_user_id: { type: Schema.Types.ObjectId, required: true },
+    invitee_user_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    status: {
+      type: String,
+      enum: ['pending', 'accepted', 'declined', 'expired', 'revoked'],
+      default: 'pending',
+      required: true
+    },
+    expires_at: { type: Date, required: true },
+    responded_at: { type: Date }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+communityInviteSchema.index({ invitee_user_id: 1, status: 1, created_at: -1 });
+communityInviteSchema.index({ community_id: 1, status: 1 });
+
+const joinRequestSchema = new Schema<IJoinRequest>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    requester_user_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    message: { type: String },
+    status: { type: String, enum: DecisionStatuses, default: 'submitted', required: true },
+    decided_by_user_id: { type: Schema.Types.ObjectId },
+    decided_at: { type: Date },
+    decision_reason: { type: String }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+joinRequestSchema.index({ community_id: 1, status: 1, created_at: 1 });
+joinRequestSchema.index({ requester_user_id: 1, status: 1 });
+
+const publishRequestSchema = new Schema<IPublishRequest>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    requester_user_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    content_type: { type: String, enum: ['post', 'event', 'ping', 'service'], required: true },
+    payload_snapshot: { type: Schema.Types.Mixed, required: true },
+    status: { type: String, enum: DecisionStatuses, default: 'submitted', required: true },
+    created_content_type: { type: String, enum: ['post', 'event', 'ping', 'service'] },
+    created_content_id: { type: Schema.Types.ObjectId },
+    decided_by_user_id: { type: Schema.Types.ObjectId },
+    decided_at: { type: Date },
+    decision_reason: { type: String }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+publishRequestSchema.index({ community_id: 1, status: 1, created_at: 1 });
+publishRequestSchema.index({ requester_user_id: 1, status: 1, created_at: -1 });
+
+const communityAccessPolicySchema = new Schema<ICommunityAccessPolicy>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, unique: true, index: true },
+    requires_verification: { type: Boolean, default: true, required: true },
+    location_match_scope: {
+      type: String,
+      enum: ['home', 'work', 'home_or_work'],
+      default: 'home_or_work',
+      required: true
+    },
+    eligibility_mode: {
+      type: String,
+      enum: ['none', 'city', 'radius', 'polygon'],
+      default: 'none',
+      required: true
+    },
+    city_codes: { type: [String], default: undefined },
+    center_point: {
+      type: {
+        type: String,
+        enum: ['Point']
+      },
+      coordinates: {
+        type: [Number],
+        validate: {
+          validator(value: number[]) {
+            return !value || value.length === 2;
+          },
+          message: 'Coordinates must be [lng, lat]'
+        }
+      }
+    },
+    radius_km: { type: Number },
+    polygon: { type: Schema.Types.Mixed },
+    is_active: { type: Boolean, default: true, required: true }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+communityAccessPolicySchema.index({ center_point: '2dsphere' });
+communityAccessPolicySchema.index({ polygon: '2dsphere' });
+
+const communityRecognitionSchema = new Schema<ICommunityRecognition>(
+  {
+    community_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    user_id: { type: Schema.Types.ObjectId, required: true, index: true },
+    source_type: {
+      type: String,
+      enum: ['golden_comment', 'event_attendance', 'admin_award'],
+      required: true
+    },
+    source_id: { type: Schema.Types.ObjectId, required: true },
+    points_delta: { type: Number, required: true },
+    note: { type: String },
+    awarded_by_user_id: { type: Schema.Types.ObjectId, required: true },
+    awarded_at: { type: Date, required: true }
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
+);
+
+communityRecognitionSchema.index({ community_id: 1, user_id: 1, awarded_at: -1 });
+
+export const Community: Model<ICommunity> =
+  (mongoose.models.Community as Model<ICommunity>) || mongoose.model<ICommunity>('Community', communitySchema);
+
+export const CommunitySettings: Model<ICommunitySettings> =
+  (mongoose.models.CommunitySettings as Model<ICommunitySettings>) ||
+  mongoose.model<ICommunitySettings>('CommunitySettings', communitySettingsSchema);
+
+export const CommunityMembership: Model<ICommunityMembership> =
+  (mongoose.models.CommunityMembership as Model<ICommunityMembership>) ||
+  mongoose.model<ICommunityMembership>('CommunityMembership', communityMembershipSchema);
+
+export const CommunityInvite: Model<ICommunityInvite> =
+  (mongoose.models.CommunityInvite as Model<ICommunityInvite>) ||
+  mongoose.model<ICommunityInvite>('CommunityInvite', communityInviteSchema);
+
+export const JoinRequest: Model<IJoinRequest> =
+  (mongoose.models.JoinRequest as Model<IJoinRequest>) ||
+  mongoose.model<IJoinRequest>('JoinRequest', joinRequestSchema);
+
+export const PublishRequest: Model<IPublishRequest> =
+  (mongoose.models.PublishRequest as Model<IPublishRequest>) ||
+  mongoose.model<IPublishRequest>('PublishRequest', publishRequestSchema);
+
+export const CommunityAccessPolicy: Model<ICommunityAccessPolicy> =
+  (mongoose.models.CommunityAccessPolicy as Model<ICommunityAccessPolicy>) ||
+  mongoose.model<ICommunityAccessPolicy>('CommunityAccessPolicy', communityAccessPolicySchema);
+
+export const CommunityRecognition: Model<ICommunityRecognition> =
+  (mongoose.models.CommunityRecognition as Model<ICommunityRecognition>) ||
+  mongoose.model<ICommunityRecognition>('CommunityRecognition', communityRecognitionSchema);

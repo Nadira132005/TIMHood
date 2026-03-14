@@ -1,0 +1,17 @@
+export const VerificationStates = ['unverified', 'verified'] as const;
+export const CommunityRoles = ['owner', 'admin', 'member'] as const;
+export const MembershipStatuses = ['invited', 'pending', 'active', 'blocked', 'left'] as const;
+export const CommunityAccessModes = ['open', 'restricted'] as const;
+export const CommunityStates = ['active', 'restricted', 'archived'] as const;
+export const DecisionStatuses = ['submitted', 'approved', 'rejected', 'withdrawn', 'expired'] as const;
+export const PublishModes = ['direct', 'approval_required'] as const;
+export const ReplyModes = ['fully_allowed', 'one_reply_per_user', 'disabled'] as const;
+export const AuthorVisibilities = ['public', 'anonymous'] as const;
+export const ContentModerationStatuses = ['published', 'hidden', 'removed', 'archived'] as const;
+export const EventStates = ['draft', 'published', 'ongoing', 'completed', 'cancelled'] as const;
+export const EventShareStates = ['requested', 'approved', 'rejected', 'revoked'] as const;
+export const EventRequestStates = ['requested', 'accepted', 'rejected', 'withdrawn', 'cancelled'] as const;
+export const PingStates = ['active', 'resolved', 'expired', 'removed'] as const;
+export const ServiceStates = ['open', 'in_selection', 'matched', 'completed', 'cancelled', 'expired'] as const;
+export const ServiceApplicationStates = ['submitted', 'accepted', 'rejected', 'withdrawn'] as const;
+export const RiddleStates = ['scheduled', 'active', 'closed', 'cancelled'] as const;
