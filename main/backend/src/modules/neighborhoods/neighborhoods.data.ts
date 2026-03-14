@@ -136,7 +136,7 @@ function buildSeeds(): NeighborhoodSeed[] {
       id: String(feature.attributes.db_id),
       name,
       slug,
-      description: `Cartierul ${name} din Timisoara, conform hartii oficiale a municipiului.`,
+      description: '',
       mapTop: ((cityBounds.maxLat - bounds.maxLat) / cityHeight) * 100,
       mapLeft: ((bounds.minLng - cityBounds.minLng) / cityWidth) * 100,
       mapWidth: ((bounds.maxLng - bounds.minLng) / cityWidth) * 100,

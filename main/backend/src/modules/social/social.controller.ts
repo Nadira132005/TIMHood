@@ -23,6 +23,16 @@ export const socialController = {
     return res.status(200).json(result);
   },
 
+  async getContacts(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await socialService.getContacts(userId, String(req.query?.q ?? ''));
+    return res.status(200).json(result);
+  },
+
   async sendFriendRequest(req: Request, res: Response): Promise<Response> {
     const userId = req.auth?.userId;
     if (!userId) {

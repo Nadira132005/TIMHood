@@ -8,6 +8,7 @@ export const socialRouter = Router();
 
 socialRouter.use(requireAuth);
 socialRouter.get('/friend-requests/pending', asyncHandler(socialController.getPendingFriendRequests));
+socialRouter.get('/contacts', asyncHandler(socialController.getContacts));
 socialRouter.get('/relationships/:userId', asyncHandler(socialController.getRelationship));
 socialRouter.post('/friend-requests/:userId', asyncHandler(socialController.sendFriendRequest));
 socialRouter.post('/friend-requests/:userId/respond', asyncHandler(socialController.respondToFriendRequest));

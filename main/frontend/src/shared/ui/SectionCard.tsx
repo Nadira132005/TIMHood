@@ -16,15 +16,21 @@ export function SectionCard({ title, children }: Props) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 22,
     padding: spacing.md,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4
   },
   title: {
     color: colors.text,
-    fontWeight: '700',
-    marginBottom: spacing.xs
+    fontWeight: '800',
+    fontSize: 16,
+    marginBottom: spacing.sm
   }
 });

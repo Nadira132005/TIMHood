@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { apiGet, apiPost } from '../../../shared/api/client';
+import { apiDelete, apiGet, apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { UserAvatar } from '../../../shared/ui/UserAvatar';
 import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
@@ -23,8 +24,10 @@ type GroupDetails = {
   membersCount: number;
   role?: string;
   visibility: 'public' | 'private';
-  groupKind: 'standard' | 'private';
+  groupKind: 'standard' | 'custom';
   neighborhoodName?: string;
+  canDelete?: boolean;
+  canLeave?: boolean;
 };
 
 type GroupMember = {
@@ -140,6 +143,27 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleDeleteGroup() {
+    Alert.alert('Delete group', 'This will remove the group for everyone. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setSubmitting(true);
+          try {
+            await apiDelete(`/communities/${groupId}`, profile.userId);
+            onBack();
+          } catch (deleteError) {
+            setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete group.');
+          } finally {
+            setSubmitting(false);
+          }
+        }
+      }
+    ]);
   }
 
   async function openMemberActions(member: GroupMember) {
@@ -270,13 +294,7 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
             {data.members.map((member) => (
               <View key={member.userId} style={styles.memberRow}>
                 <Pressable style={styles.memberTapArea} onPress={() => openMemberActions(member)}>
-                  {member.photoBase64 ? (
-                    <Image source={{ uri: toImageUri(member.photoBase64)! }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarText}>{member.fullName.slice(0, 1)}</Text>
-                    </View>
-                  )}
+                  <UserAvatar photoBase64={member.photoBase64} label={member.fullName} size={44} />
                   <View style={styles.memberCopy}>
                     <Text style={styles.memberName}>{member.fullName}</Text>
                     <Text style={styles.memberMeta}>{member.role}</Text>
@@ -312,8 +330,20 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
                   </View>
                 ))
               ) : (
-                <Text style={styles.bodyText}>No accepted friends left to invite.</Text>
+                <Text style={styles.bodyText}>No accepted friends left to invite, or they already have a pending invite.</Text>
               )}
+            </SectionCard>
+          ) : null}
+
+          {data.group.canDelete ? (
+            <SectionCard title="Group Actions">
+              <Pressable
+                style={[styles.deleteButton, submitting && styles.buttonDisabled]}
+                onPress={handleDeleteGroup}
+                disabled={submitting}
+              >
+                <Text style={styles.deleteButtonText}>Delete group</Text>
+              </Pressable>
             </SectionCard>
           ) : null}
         </ScrollView>
@@ -323,10 +353,10 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{publicProfile.fullName}</Text>
-            {publicProfile.photoBase64 ? (
-              <Image source={{ uri: toImageUri(publicProfile.photoBase64)! }} style={styles.profilePhoto} />
+            <UserAvatar photoBase64={publicProfile.photoBase64} label={publicProfile.fullName} size={72} />
+            {typeof publicProfile.age === 'number' ? (
+              <Text style={styles.sheetText}>Age: {publicProfile.age}</Text>
             ) : null}
-            <Text style={styles.sheetText}>Age: {publicProfile.age ?? 'Unknown'}</Text>
             <Text style={styles.sheetText}>Neighborhood: {publicProfile.neighborhood || 'Unknown'}</Text>
             <Text style={styles.sheetText}>
               Last active: {publicProfile.lastSeenAt ? new Date(publicProfile.lastSeenAt).toLocaleString() : 'Unknown'}
@@ -443,23 +473,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20
-  },
-  avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#D7F5EE',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarText: {
-    color: '#0D5E57',
-    fontWeight: '800'
-  },
   memberCopy: {
     flex: 1
   },
@@ -538,6 +551,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   actionPrimaryButtonText: {
+    color: '#ffffff',
+    fontWeight: '800'
+  },
+  deleteButton: {
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: '#B42318',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  deleteButtonText: {
     color: '#ffffff',
     fontWeight: '800'
   },

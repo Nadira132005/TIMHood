@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,12 +13,13 @@ import {
   View
 } from 'react-native';
 
-import { apiGet, apiPost } from '../../../shared/api/client';
+import { apiDelete, apiGet, apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { UserAvatar } from '../../../shared/ui/UserAvatar';
 import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
@@ -25,6 +27,8 @@ type Props = {
   groupId: string;
   onBack(): void;
   onOpenMembers(): void;
+  onGroupLeft(): void;
+  onGroupDeleted(): void;
 };
 
 type GroupChatMessage = {
@@ -47,8 +51,10 @@ type GroupChatResponse = {
     membersCount: number;
     role?: string;
     visibility: 'public' | 'private';
-    groupKind: 'standard' | 'private';
+    groupKind: 'standard' | 'custom';
     neighborhoodName?: string;
+    canDelete?: boolean;
+    canLeave?: boolean;
   };
   canViewMembers: boolean;
   messages: GroupChatMessage[];
@@ -64,7 +70,7 @@ type GroupMembersPreviewResponse = {
   members: GroupMemberPreview[];
 };
 
-export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: Props) {
+export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers, onGroupLeft, onGroupDeleted }: Props) {
   const [data, setData] = useState<GroupChatResponse | null>(null);
   const [membersPreview, setMembersPreview] = useState<GroupMemberPreview[]>([]);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
@@ -189,6 +195,42 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
     }
   }
 
+  async function confirmLeave() {
+    Alert.alert('Leave group', 'Do you want to leave this group?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiPost(`/communities/${groupId}/leave`, {}, profile.userId);
+            onGroupLeft();
+          } catch (leaveError) {
+            setError(leaveError instanceof Error ? leaveError.message : 'Unable to leave group.');
+          }
+        }
+      }
+    ]);
+  }
+
+  async function confirmDelete() {
+    Alert.alert('Delete group', 'This will remove the group for everyone. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiDelete(`/communities/${groupId}`, profile.userId);
+            onGroupDeleted();
+          } catch (deleteError) {
+            setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete group.');
+          }
+        }
+      }
+    ]);
+  }
+
   function openImageViewer(imageUri: string, title?: string) {
     setViewerImageUri(imageUri);
     setViewerTitle(title || 'Photo');
@@ -225,13 +267,7 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
             {data.messages.map((message) => (
               <View key={message.id} style={[styles.messageRow, message.isOwnMessage && styles.messageRowOwn]}>
                 {!message.isOwnMessage ? (
-                  message.userPhotoBase64 ? (
-                    <Image source={{ uri: toImageUri(message.userPhotoBase64)! }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarText}>{message.userName.slice(0, 1)}</Text>
-                    </View>
-                  )
+                  <UserAvatar photoBase64={message.userPhotoBase64} label={message.userName} size={28} />
                 ) : null}
                 <View style={[styles.messageBubble, message.isOwnMessage ? styles.ownBubble : styles.otherBubble]}>
                   {!message.isOwnMessage ? <Text style={styles.senderName}>{message.userName}</Text> : null}
@@ -297,6 +333,16 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers }: P
             {data.canViewMembers ? (
               <Pressable style={styles.primaryButton} onPress={onOpenMembers}>
                 <Text style={styles.primaryButtonText}>View all participants</Text>
+              </Pressable>
+            ) : null}
+            {data.group.canLeave ? (
+              <Pressable style={styles.secondaryButton} onPress={() => void confirmLeave()}>
+                <Text style={styles.secondaryButtonText}>Leave group</Text>
+              </Pressable>
+            ) : null}
+            {data.group.canDelete ? (
+              <Pressable style={styles.dangerButton} onPress={() => void confirmDelete()}>
+                <Text style={styles.dangerButtonText}>Delete group</Text>
               </Pressable>
             ) : null}
             <Pressable style={styles.secondaryButton} onPress={() => setShowGroupInfo(false)}>
@@ -366,24 +412,6 @@ const styles = StyleSheet.create({
   },
   messageRowOwn: {
     justifyContent: 'flex-end'
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14
-  },
-  avatarPlaceholder: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#D7F5EE',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarText: {
-    color: '#0D5E57',
-    fontWeight: '800',
-    fontSize: 12
   },
   messageBubble: {
     maxWidth: '82%',
@@ -550,5 +578,16 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: colors.text,
     fontWeight: '700'
+  },
+  dangerButton: {
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: '#B42318',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  dangerButtonText: {
+    color: '#ffffff',
+    fontWeight: '800'
   }
 });

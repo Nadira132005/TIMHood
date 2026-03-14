@@ -130,6 +130,21 @@ export async function apiPost<T>(path: string, body: unknown, userId?: string): 
   return response.json() as Promise<T>;
 }
 
+export async function apiDelete<T>(path: string, userId?: string): Promise<T> {
+  const apiBaseUrl = await getApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'DELETE',
+    headers: userId ? { 'x-user-id': userId } : undefined
+  });
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response);
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { error?: string };

@@ -16,4 +16,5 @@ identityRouter.get('/proof-status', asyncHandler(identityController.getProofStat
 identityRouter.post('/proof-of-work', asyncHandler(identityController.submitProofOfWork));
 identityRouter.post('/home-address', asyncHandler(identityController.saveHomeAddress));
 identityRouter.post('/bio', asyncHandler(identityController.saveBio));
+identityRouter.post('/privacy', asyncHandler(identityController.savePrivacy));
 identityRouter.put('/locations', asyncHandler(identityController.upsertLocations));

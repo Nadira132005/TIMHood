@@ -7,6 +7,7 @@ import { colors, spacing } from '../../../shared/theme/tokens';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { UserAvatar } from '../../../shared/ui/UserAvatar';
 import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
@@ -96,13 +97,7 @@ export function RequestsScreen({ profile, onBack }: Props) {
             {friendRequests.length ? (
               friendRequests.map((request) => (
                 <View key={request.fromUserId} style={styles.row}>
-                  {request.photoBase64 ? (
-                    <Image source={{ uri: toImageUri(request.photoBase64)! }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarText}>{request.fullName.slice(0, 1)}</Text>
-                    </View>
-                  )}
+                  <UserAvatar photoBase64={request.photoBase64} label={request.fullName} size={44} />
                   <View style={styles.copy}>
                     <Text style={styles.name}>{request.fullName}</Text>
                     {request.bio ? <Text style={styles.bodyText}>{request.bio}</Text> : null}
@@ -123,9 +118,7 @@ export function RequestsScreen({ profile, onBack }: Props) {
             {groupInvites.length ? (
               groupInvites.map((invite) => (
                 <View key={invite.inviteId} style={styles.row}>
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarText}>#</Text>
-                  </View>
+                  <UserAvatar label={invite.groupName} size={44} />
                   <View style={styles.copy}>
                     <Text style={styles.name}>{invite.groupName}</Text>
                     <Text style={styles.bodyText}>Invited by {invite.inviterName}</Text>
@@ -186,23 +179,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     alignItems: 'center'
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22
-  },
-  avatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#D7F5EE',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarText: {
-    color: '#0D5E57',
-    fontWeight: '800'
   },
   copy: {
     flex: 1

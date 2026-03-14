@@ -19,6 +19,7 @@ import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { UserAvatar } from '../../../shared/ui/UserAvatar';
 import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
@@ -380,13 +381,7 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
                 style={[styles.messageRow, message.isOwnMessage && styles.messageRowOwn]}
               >
                 {!message.isOwnMessage ? (
-                  message.userPhotoBase64 ? (
-                    <Image source={{ uri: toImageUri(message.userPhotoBase64)! }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarText}>{message.userName.slice(0, 1)}</Text>
-                    </View>
-                  )
+                  <UserAvatar photoBase64={message.userPhotoBase64} label={message.userName} size={28} />
                 ) : null}
                 <View style={[styles.messageBubble, message.isOwnMessage ? styles.ownBubble : styles.otherBubble]}>
                   {!message.isOwnMessage ? <Text style={styles.senderName}>{message.userName}</Text> : null}
@@ -429,7 +424,9 @@ export function NeighborhoodChatScreen({ profile, onBack }: Props) {
                 <Image source={{ uri: toImageUri(publicProfile.photoBase64)! }} style={styles.profilePhoto} />
               </Pressable>
             ) : null}
-            <Text style={styles.sheetText}>Age: {publicProfile.age ?? 'Unknown'}</Text>
+            {typeof publicProfile.age === 'number' ? (
+              <Text style={styles.sheetText}>Age: {publicProfile.age}</Text>
+            ) : null}
             <Text style={styles.sheetText}>Neighborhood: {publicProfile.neighborhood || 'Unknown'}</Text>
             <Text style={styles.sheetText}>
               Last active: {publicProfile.lastSeenAt ? new Date(publicProfile.lastSeenAt).toLocaleString() : 'Unknown'}
@@ -545,24 +542,6 @@ const styles = StyleSheet.create({
   },
   messageRowOwn: {
     justifyContent: 'flex-end'
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14
-  },
-  avatarPlaceholder: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#D7F5EE',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarText: {
-    color: '#0D5E57',
-    fontWeight: '800',
-    fontSize: 12
   },
   messageBubble: {
     maxWidth: '82%',

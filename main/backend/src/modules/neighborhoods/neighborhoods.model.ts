@@ -31,7 +31,7 @@ const neighborhoodSchema = new Schema<INeighborhood>(
     _id: { type: String, required: true },
     name: { type: String, required: true, unique: true },
     slug: { type: String, required: true, unique: true, index: true },
-    description: { type: String, required: true },
+    description: { type: String, default: '' },
     source: { type: String, required: true, default: 'https://harta.primariatm.ro/' },
     map_top: { type: Number, required: true },
     map_left: { type: Number, required: true },

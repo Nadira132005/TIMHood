@@ -73,16 +73,17 @@ export const communitiesController = {
     return res.status(201).json(result);
   },
 
-  async createPrivateGroup(req: Request, res: Response): Promise<Response> {
+  async createGroup(req: Request, res: Response): Promise<Response> {
     const userId = req.auth?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const result = await communitiesService.createPrivateGroup(userId, {
+    const result = await communitiesService.createGroup(userId, {
       name: String(req.body?.name ?? ''),
       description: typeof req.body?.description === 'string' ? req.body.description : undefined,
-      memberUserIds: Array.isArray(req.body?.memberUserIds) ? req.body.memberUserIds : []
+      memberUserIds: Array.isArray(req.body?.memberUserIds) ? req.body.memberUserIds : [],
+      visibility: req.body?.visibility === 'private' ? 'private' : 'public'
     });
 
     return res.status(201).json(result);
@@ -147,6 +148,26 @@ export const communitiesController = {
       req.params.inviteId,
       Boolean(req.body?.accept)
     );
+    return res.status(200).json(result);
+  },
+
+  async leaveGroup(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await communitiesService.leaveGroup(userId, req.params.communityId);
+    return res.status(200).json(result);
+  },
+
+  async deleteGroup(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await communitiesService.deleteGroup(userId, req.params.communityId);
     return res.status(200).json(result);
   }
 };

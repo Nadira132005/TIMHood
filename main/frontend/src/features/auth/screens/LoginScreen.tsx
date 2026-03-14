@@ -76,15 +76,22 @@ export function LoginScreen({ onLogin }: Props) {
   return (
     <ScreenContainer>
       <View style={styles.hero}>
-        <Text style={styles.eyebrow}>Timhood Login</Text>
-        <Text style={styles.title}>Tap the Romanian ID card to sign in.</Text>
-        <Text style={styles.subtitle}>
-          The NFC read becomes the fixed account profile. The app stores document number, name,
-          nationality, birth date, expiry date, and photo from the card.
-        </Text>
+        <View style={styles.heroPanel}>
+          <View style={styles.brandPill}>
+            <Text style={styles.brandPillText}>TIMHood</Text>
+          </View>
+          <Text style={styles.welcomeLabel}>Welcome home</Text>
+          <Text style={styles.title}>Get to know your neighbours.</Text>
+          <Text style={styles.subtitle}>
+            Sign in now with your Romanian ID card and join the people, groups, and conversations around your neighborhood.
+          </Text>
+          <Text style={styles.microCopy}>
+            Your ID details stay fixed as your verified local profile.
+          </Text>
+        </View>
       </View>
 
-      <SectionCard title="Read ID">
+      <SectionCard title="Sign In">
         <Text style={styles.label}>Card Access Number (CAN)</Text>
         <TextInput
           value={can}
@@ -97,18 +104,16 @@ export function LoginScreen({ onLogin }: Props) {
         />
         <View style={styles.nfcHintCard}>
           <Text style={styles.nfcHintTitle}>Keep the ID card on the back of the phone</Text>
-          <Text style={styles.nfcHintText}>
-            Hold it steady during the full NFC read.
-          </Text>
+          <Text style={styles.nfcHintText}>Hold it steady during the full NFC read.</Text>
         </View>
         <Pressable style={[styles.primaryButton, busy && styles.buttonDisabled]} onPress={handleReadCard} disabled={busy}>
           {busy ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="#ffffff" />
-              <Text style={styles.primaryButtonText}>Reading ID...</Text>
+              <Text style={styles.primaryButtonText}>Signing in...</Text>
             </View>
           ) : (
-            <Text style={styles.primaryButtonText}>Read ID with NFC</Text>
+            <Text style={styles.primaryButtonText}>Sign in now</Text>
           )}
         </Pressable>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -138,29 +143,16 @@ export function LoginScreen({ onLogin }: Props) {
         ) : null}
       </SectionCard>
 
-      <SectionCard title="How it works">
-        <Text style={styles.bodyText}>1. Enter the 6-digit CAN printed on the card.</Text>
-        <Text style={styles.bodyText}>2. Tap Read ID with NFC and hold the card behind the phone.</Text>
-        <Text style={styles.bodyText}>3. If the document is still valid, the user is created or signed in automatically.</Text>
-      </SectionCard>
-
-      <SectionCard title="Demo Users">
-        <Text style={styles.bodyText}>Use `0000`, `0001`, or `0002` to sign in as seeded Soarelui demo users without NFC.</Text>
-      </SectionCard>
-
-      <SectionCard title="Phone Without USB">
-        <Text style={styles.bodyText}>
-          If you want the app to work without USB, open Connection settings and set the backend URL to your Mac LAN IP, for example `http://192.168.50.152:4000/api`.
+      <View style={styles.footnoteBlock}>
+        <Text style={styles.footnoteText}>
+          Enter the CAN, tap sign in, and keep the ID card behind the phone until the read finishes.
         </Text>
-      </SectionCard>
-
-      <SectionCard title="Device Requirement">
-        <Text style={styles.bodyText}>
+        <Text style={styles.footnoteText}>
           {Platform.OS === 'android'
             ? 'This login needs an Android build with the id_reader native module and real NFC hardware.'
             : 'This screen is for Android NFC login. iOS and Expo Go cannot complete this flow yet.'}
         </Text>
-      </SectionCard>
+      </View>
     </ScreenContainer>
   );
 }
@@ -168,27 +160,55 @@ export function LoginScreen({ onLogin }: Props) {
 const styles = StyleSheet.create({
   hero: {
     marginBottom: spacing.lg,
-    paddingTop: spacing.lg
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md
   },
-  eyebrow: {
+  heroPanel: {
+    borderRadius: 26,
+    padding: spacing.lg,
+    backgroundColor: '#F0F9F7',
+    borderWidth: 1,
+    borderColor: '#CDEBE4'
+  },
+  brandPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#D7F5EE'
+  },
+  brandPillText: {
     color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8
+  },
+  welcomeLabel: {
+    marginTop: spacing.md,
+    color: '#0D5E57',
     fontSize: 13,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 1
+    letterSpacing: 1.1
   },
   title: {
     marginTop: spacing.xs,
     color: colors.text,
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 34,
+    lineHeight: 40,
     fontWeight: '800'
   },
   subtitle: {
     marginTop: spacing.sm,
     color: colors.textMuted,
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 22
+  },
+  microCopy: {
+    marginTop: spacing.sm,
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700'
   },
   label: {
     color: colors.text,
@@ -256,6 +276,16 @@ const styles = StyleSheet.create({
     color: '#B42318',
     lineHeight: 20
   },
+  footnoteBlock: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs
+  },
+  footnoteText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17
+  },
   connectionToggle: {
     marginTop: spacing.md,
     alignSelf: 'flex-start'
@@ -269,10 +299,5 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border
-  },
-  bodyText: {
-    color: colors.text,
-    lineHeight: 22,
-    marginBottom: spacing.xs
   }
 });

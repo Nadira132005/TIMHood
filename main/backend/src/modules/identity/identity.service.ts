@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { HttpError } from '../../shared/utils/http-error';
 import { communitiesService } from '../communities/communities.service';
 import { neighborhoodsService } from '../neighborhoods/neighborhoods.service';
+import { FriendRequest } from '../social/social.model';
 import { User, UserLocation } from './identity.model';
 import { resolveNeighborhood } from './neighborhood-resolver';
 
@@ -53,6 +54,8 @@ type FixedProfileResponse = {
   dateOfExpiry: string;
   photoBase64?: string;
   bio?: string;
+  showPhotoToOthers: boolean;
+  showAgeToOthers: boolean;
   documentIsValid: boolean;
   homeAddressLabel?: string;
   homeNeighborhood?: string | null;
@@ -149,6 +152,8 @@ function buildFixedProfile(user: {
   date_of_expiry?: Date;
   profile_photo_base64?: string;
   bio?: string;
+  show_photo_to_others?: boolean;
+  show_age_to_others?: boolean;
   home_address_label?: string;
   home_neighborhood?: string;
 }): FixedProfileResponse {
@@ -176,10 +181,34 @@ function buildFixedProfile(user: {
     dateOfExpiry: toIsoDate(user.date_of_expiry)!,
     photoBase64: user.profile_photo_base64,
     bio: user.bio,
+    showPhotoToOthers: user.show_photo_to_others ?? true,
+    showAgeToOthers: user.show_age_to_others ?? true,
     documentIsValid: user.date_of_expiry.getTime() >= Date.now(),
     homeAddressLabel: user.home_address_label,
     homeNeighborhood: user.home_neighborhood ?? null
   };
+}
+
+async function getRelationshipStatus(userId: string, targetUserId: string): Promise<'self' | 'friends' | 'request_sent' | 'request_received' | 'none'> {
+  if (userId === targetUserId) {
+    return 'self';
+  }
+
+  const [sent, received] = await Promise.all([
+    FriendRequest.findOne({ from_user_id: userId, to_user_id: targetUserId }).lean(),
+    FriendRequest.findOne({ from_user_id: targetUserId, to_user_id: userId }).lean()
+  ]);
+
+  if (sent?.status === 'accepted' || received?.status === 'accepted') {
+    return 'friends';
+  }
+  if (sent?.status === 'pending') {
+    return 'request_sent';
+  }
+  if (received?.status === 'pending') {
+    return 'request_received';
+  }
+  return 'none';
 }
 
 function getAge(dateOfBirth?: Date): number | undefined {
@@ -203,10 +232,15 @@ function buildDemoAvatar(firstName: string, lastName: string, background: string
   const initials = `${firstName.slice(0, 1)}${lastName.slice(0, 1)}`.toUpperCase();
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
-      <rect width="240" height="240" rx="40" fill="${background}" />
-      <circle cx="120" cy="88" r="40" fill="#F6E7D8" />
-      <path d="M52 212c10-42 42-66 68-66s58 24 68 66" fill="#F6E7D8" />
-      <text x="120" y="224" text-anchor="middle" font-family="Arial" font-size="28" font-weight="700" fill="#ffffff">${initials}</text>
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${background}" />
+          <stop offset="100%" stop-color="#0F172A" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="240" rx="52" fill="url(#g)" />
+      <circle cx="120" cy="120" r="74" fill="rgba(255,255,255,0.16)" />
+      <text x="120" y="142" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#ffffff">${initials}</text>
     </svg>
   `.trim();
 
@@ -302,6 +336,8 @@ export const identityService = {
           date_of_expiry: dateOfExpiry,
           profile_photo_base64: demoUser.photoDataUri,
           bio: demoUser.bio,
+          show_photo_to_others: true,
+          show_age_to_others: true,
           home_address_label: demoUser.homeAddressLabel,
           home_neighborhood: canonicalNeighborhood,
           verification_state: 'verified',
@@ -406,6 +442,8 @@ export const identityService = {
           date_of_birth: dateOfBirth,
           date_of_expiry: dateOfExpiry,
           profile_photo_base64: payload.photoBase64,
+          show_photo_to_others: true,
+          show_age_to_others: true,
           verification_state: 'verified',
           document_checked_at: now,
           last_seen_at: now
@@ -437,7 +475,7 @@ export const identityService = {
   async getFixedProfile(documentNumber: string): Promise<FixedProfileResponse | null> {
     const user = await User.findOne({ document_number: documentNumber.trim().toUpperCase() })
       .select(
-        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64 bio home_address_label home_neighborhood'
+        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64 bio show_photo_to_others show_age_to_others home_address_label home_neighborhood'
       )
       .lean();
 
@@ -448,21 +486,24 @@ export const identityService = {
     return buildFixedProfile(user);
   },
 
-  async getPublicProfile(userId: string): Promise<PublicProfileResponse | null> {
+  async getPublicProfile(userId: string, viewerUserId?: string): Promise<PublicProfileResponse | null> {
     const user = await User.findById(userId)
-      .select('full_name profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at')
+      .select('full_name profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at show_photo_to_others show_age_to_others')
       .lean();
 
     if (!user) {
       return null;
     }
 
+    const relationship = viewerUserId ? await getRelationshipStatus(viewerUserId, userId) : 'none';
+    const canSeePrivateFields = relationship === 'self';
+
     return {
       userId,
       fullName: user.full_name || userId,
-      photoBase64: user.profile_photo_base64,
+      photoBase64: canSeePrivateFields || user.show_photo_to_others ? user.profile_photo_base64 : undefined,
       bio: user.bio,
-      age: getAge(user.date_of_birth),
+      age: canSeePrivateFields || user.show_age_to_others ? getAge(user.date_of_birth) : undefined,
       neighborhood: user.home_neighborhood ?? null,
       lastSeenAt: user.last_seen_at?.toISOString()
     };
@@ -627,6 +668,23 @@ export const identityService = {
     }
 
     user.bio = normalizedBio.slice(0, 280);
+    await user.save();
+
+    return buildFixedProfile(user);
+  },
+
+  async savePrivacySettings(
+    userId: string,
+    payload: { showPhotoToOthers: boolean; showAgeToOthers: boolean }
+  ): Promise<FixedProfileResponse> {
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    user.show_photo_to_others = payload.showPhotoToOthers;
+    user.show_age_to_others = payload.showAgeToOthers;
     await user.save();
 
     return buildFixedProfile(user);

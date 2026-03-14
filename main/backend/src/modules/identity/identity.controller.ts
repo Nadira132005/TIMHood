@@ -41,7 +41,7 @@ export const identityController = {
   },
 
   async getPublicProfile(req: Request, res: Response): Promise<Response> {
-    const profile = await identityService.getPublicProfile(req.params.userId);
+    const profile = await identityService.getPublicProfile(req.params.userId, req.auth?.userId || undefined);
     if (!profile) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -115,6 +115,19 @@ export const identityController = {
     }
 
     const profile = await identityService.saveBio(userId, String(req.body?.bio ?? ''));
+    return res.status(200).json(profile);
+  },
+
+  async savePrivacy(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const profile = await identityService.savePrivacySettings(userId, {
+      showPhotoToOthers: Boolean(req.body?.showPhotoToOthers),
+      showAgeToOthers: Boolean(req.body?.showAgeToOthers)
+    });
     return res.status(200).json(profile);
   }
 };

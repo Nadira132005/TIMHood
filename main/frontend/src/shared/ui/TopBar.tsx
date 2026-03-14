@@ -51,13 +51,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.text,
     fontWeight: '800',
-    fontSize: 16
+    fontSize: 17
   },
   button: {
-    paddingVertical: 8
+    minHeight: 38,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.66)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2
   },
   buttonText: {
     color: colors.primary,
-    fontWeight: '700'
+    fontWeight: '800'
   }
 });

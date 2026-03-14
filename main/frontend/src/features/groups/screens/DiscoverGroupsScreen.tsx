@@ -22,15 +22,17 @@ type GroupCard = {
   membersCount: number;
   role?: string;
   visibility: 'public' | 'private';
-  groupKind: 'standard' | 'private';
+  groupKind: 'standard' | 'custom';
   neighborhoodName?: string;
+  canDelete?: boolean;
+  canLeave?: boolean;
 };
 
 type DiscoverGroupsResponse = {
   neighborhoodName: string;
   joinedGroups: GroupCard[];
   standardGroups: GroupCard[];
-  privateGroups: GroupCard[];
+  publicGroups: GroupCard[];
   friends: Array<{ userId: string; fullName: string }>;
 };
 
@@ -51,6 +53,7 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [privateName, setPrivateName] = useState('');
   const [privateDescription, setPrivateDescription] = useState('');
+  const [groupVisibility, setGroupVisibility] = useState<'public' | 'private'>('public');
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -110,30 +113,32 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
     }
   }
 
-  async function handleCreatePrivateGroup() {
+  async function handleCreateGroup() {
     if (!privateName.trim()) {
-      setError('Enter a private group name.');
+      setError('Enter a group name.');
       return;
     }
 
     setSubmitting(true);
     try {
       await apiPost(
-        '/communities/private',
+        '/communities',
         {
           name: privateName,
           description: privateDescription,
-          memberUserIds: selectedFriendIds
+          memberUserIds: selectedFriendIds,
+          visibility: groupVisibility
         },
         profile.userId
       );
       setPrivateName('');
       setPrivateDescription('');
       setSelectedFriendIds([]);
+      setGroupVisibility('public');
       await reload();
       setError(null);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Unable to create private group.');
+      setError(createError instanceof Error ? createError.message : 'Unable to create group.');
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +152,7 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
 
   const joinedIds = new Set(data?.joinedGroups.map((group) => group.id) || []);
   const standardGroupsToJoin = data?.standardGroups.filter((group) => !joinedIds.has(group.id)) ?? [];
-  const privateGroupsToJoin = data?.privateGroups.filter((group) => !joinedIds.has(group.id)) ?? [];
+  const publicGroupsToJoin = data?.publicGroups.filter((group) => !joinedIds.has(group.id)) ?? [];
   const filteredNeighborhoods = neighborhoods.filter((item) =>
     item.name.toLowerCase().includes(search.trim().toLowerCase())
   );
@@ -175,7 +180,7 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search neighborhood name, for example Giroc"
+              placeholder="Search neighborhood name, for example Elisabetin"
               placeholderTextColor={colors.textMuted}
               style={styles.input}
             />
@@ -216,9 +221,9 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
             )}
           </SectionCard>
 
-          <SectionCard title="Private Groups to Join">
-            {privateGroupsToJoin.length ? (
-              privateGroupsToJoin.map((group) => (
+          <SectionCard title={`Other Public Groups in ${data.neighborhoodName}`}>
+            {publicGroupsToJoin.length ? (
+              publicGroupsToJoin.map((group) => (
                 <GroupRow
                   key={group.id}
                   group={group}
@@ -228,11 +233,11 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
                 />
               ))
             ) : (
-              <Text style={styles.bodyText}>No other private groups are visible to you here.</Text>
+              <Text style={styles.bodyText}>No other public groups are available to join here yet.</Text>
             )}
           </SectionCard>
 
-          <SectionCard title="Create Private Group">
+          <SectionCard title="Create a Group">
             <TextInput
               value={privateName}
               onChangeText={setPrivateName}
@@ -248,9 +253,31 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
               style={[styles.input, styles.textArea]}
               multiline
             />
-            <Text style={styles.selectorTitle}>Invite friends</Text>
+            <Text style={styles.selectorTitle}>Choose who can join</Text>
             <View style={styles.friendWrap}>
-              {data.friends.length ? (
+              {(['public', 'private'] as const).map((value) => {
+                const active = groupVisibility === value;
+                return (
+                  <Pressable
+                    key={value}
+                    onPress={() => setGroupVisibility(value)}
+                    style={[styles.friendChip, active && styles.friendChipActive]}
+                  >
+                    <Text style={[styles.friendChipText, active && styles.friendChipTextActive]}>
+                      {value === 'public' ? 'Public' : 'Private'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.bodyText}>
+              {groupVisibility === 'public'
+                ? 'Public groups appear to everyone browsing this neighborhood.'
+                : 'Private groups are visible only to invited friends, who must accept first.'}
+            </Text>
+            {groupVisibility === 'private' ? <Text style={styles.selectorTitle}>Invite friends</Text> : null}
+            <View style={styles.friendWrap}>
+              {groupVisibility === 'private' && data.friends.length ? (
                 data.friends.map((friend) => {
                   const active = selectedFriendIds.includes(friend.userId);
                   return (
@@ -266,15 +293,21 @@ export function DiscoverGroupsScreen({ profile, onBack, onOpenGroup }: Props) {
                   );
                 })
               ) : (
-                <Text style={styles.bodyText}>You need accepted friends before adding them to a private group.</Text>
+                <Text style={styles.bodyText}>
+                  {groupVisibility === 'private'
+                    ? 'You need accepted friends before adding them to a private group.'
+                    : 'You can still invite friends later if you switch to a private group flow.'}
+                </Text>
               )}
             </View>
             <Pressable
               style={[styles.primaryButton, submitting && styles.buttonDisabled]}
-              onPress={handleCreatePrivateGroup}
+              onPress={handleCreateGroup}
               disabled={submitting}
             >
-              <Text style={styles.primaryButtonText}>Create private group</Text>
+              <Text style={styles.primaryButtonText}>
+                {submitting ? 'Creating...' : `Create ${groupVisibility} group`}
+              </Text>
             </Pressable>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
           </SectionCard>

@@ -14,6 +14,7 @@ import {
 import { apiGet, apiPost, getApiBaseUrl } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
+import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
@@ -67,8 +68,14 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
   const [resolvedLocation, setResolvedLocation] = useState<[number, number] | null>(null);
   const [resolutionMessage, setResolutionMessage] = useState<string | null>(null);
   const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
+  const [showMapViewer, setShowMapViewer] = useState(false);
+  const [neighborhoodQuery, setNeighborhoodQuery] = useState('');
 
   const sortedNeighborhoods = [...neighborhoods].sort((a, b) => a.name.localeCompare(b.name));
+  const filteredNeighborhoods = sortedNeighborhoods.filter((item) =>
+    item.name.toLowerCase().includes(neighborhoodQuery.trim().toLowerCase())
+  );
+  const highlightedNeighborhood = sortedNeighborhoods.find((item) => item.name === selectedNeighborhood) || null;
   const mapWidth = Math.max(280, width - 64);
   const mapHeight = mapExpanded ? mapWidth * 1.18 : mapWidth * 0.82;
 
@@ -259,14 +266,30 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           ) : (
             <View style={styles.selectorLayout}>
               <View style={styles.listHeader}>
-                <Text style={styles.listTitle}>All neighborhoods ({sortedNeighborhoods.length})</Text>
+                <Text style={styles.listTitle}>Find your neighborhood</Text>
                 <Pressable onPress={() => setMapExpanded((value) => !value)}>
                   <Text style={styles.expandText}>{mapExpanded ? 'Minimize map' : 'Maximize map'}</Text>
                 </Pressable>
               </View>
 
+              <TextInput
+                value={neighborhoodQuery}
+                onChangeText={setNeighborhoodQuery}
+                placeholder="Search neighborhood name"
+                placeholderTextColor={colors.textMuted}
+                style={styles.searchInput}
+              />
+
+              {highlightedNeighborhood ? (
+                <View style={styles.selectedCard}>
+                  <Text style={styles.selectedLabel}>Selected neighborhood</Text>
+                  <Text style={styles.selectedTitle}>{highlightedNeighborhood.name}</Text>
+                  {resolutionMessage ? <Text style={styles.selectedBody}>{resolutionMessage}</Text> : null}
+                </View>
+              ) : null}
+
               <View style={styles.listColumn}>
-                {sortedNeighborhoods.map((neighborhood) => {
+                {filteredNeighborhoods.map((neighborhood) => {
                   const active = selectedNeighborhood === neighborhood.name;
 
                   return (
@@ -281,16 +304,19 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
                     </Pressable>
                   );
                 })}
+                {!filteredNeighborhoods.length ? <Text style={styles.helperText}>No neighborhood matches this search.</Text> : null}
               </View>
 
               <View style={styles.mapCard}>
                 <Text style={styles.mapTitle}>Official neighborhood map</Text>
                 {mapImageUrl ? (
-                  <Image
-                    source={{ uri: mapImageUrl }}
-                    resizeMode="contain"
-                    style={[styles.mapImage, { height: mapHeight }]}
-                  />
+                  <Pressable onPress={() => setShowMapViewer(true)}>
+                    <Image
+                      source={{ uri: mapImageUrl }}
+                      resizeMode="contain"
+                      style={[styles.mapImage, { height: mapHeight }]}
+                    />
+                  </Pressable>
                 ) : (
                   <View style={[styles.mapPlaceholder, { height: mapHeight }]}>
                     <Text style={styles.helperText}>Map image is not available right now.</Text>
@@ -299,7 +325,7 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
                 <Text style={styles.mapHint}>
                   {selectedNeighborhood
                     ? `Selected neighborhood: ${selectedNeighborhood}`
-                    : 'Select a neighborhood from the list after checking the official map image.'}
+                    : 'Search and select a neighborhood after checking the official map image.'}
                 </Text>
               </View>
             </View>
@@ -315,6 +341,13 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </SectionCard>
       </ScrollView>
+
+      <ImageViewerModal
+        visible={showMapViewer}
+        imageUri={mapImageUrl}
+        title="Neighborhood map"
+        onClose={() => setShowMapViewer(false)}
+      />
     </ScreenContainer>
   );
 }
@@ -414,9 +447,44 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15
   },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    color: colors.text,
+    fontSize: 15,
+    backgroundColor: 'rgba(255,255,255,0.82)'
+  },
   expandText: {
     color: colors.primary,
     fontWeight: '800'
+  },
+  selectedCard: {
+    borderRadius: 18,
+    padding: spacing.md,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 140, 124, 0.18)'
+  },
+  selectedLabel: {
+    color: colors.accent,
+    fontWeight: '800',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8
+  },
+  selectedTitle: {
+    marginTop: 4,
+    color: colors.text,
+    fontWeight: '800',
+    fontSize: 20
+  },
+  selectedBody: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    lineHeight: 20
   },
   listColumn: {
     flexDirection: 'row',

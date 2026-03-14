@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { apiPost } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
 import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
-import { toImageUri } from '../../../shared/utils/images';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
+import { UserAvatar } from '../../../shared/ui/UserAvatar';
+import { toImageUri } from '../../../shared/utils/images';
 
 type Props = {
   profile: FixedIdentityProfile;
@@ -23,6 +24,13 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPhotoViewer, setShowPhotoViewer] = useState(false);
+  const [showPhotoToOthers, setShowPhotoToOthers] = useState(profile.showPhotoToOthers);
+  const [showAgeToOthers, setShowAgeToOthers] = useState(profile.showAgeToOthers);
+
+  useEffect(() => {
+    setShowPhotoToOthers(profile.showPhotoToOthers);
+    setShowAgeToOthers(profile.showAgeToOthers);
+  }, [profile.showAgeToOthers, profile.showPhotoToOthers]);
 
   async function handleSaveBio() {
     setSaving(true);
@@ -37,29 +45,39 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
     }
   }
 
+  async function handleSavePrivacy() {
+    setSaving(true);
+    try {
+      const updated = await apiPost<FixedIdentityProfile>(
+        '/identity/privacy',
+        { showPhotoToOthers, showAgeToOthers },
+        profile.userId
+      );
+      onProfileUpdated(updated);
+      setError(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to save privacy settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <ScreenContainer>
-      <TopBar title="Profile" leftActionLabel="Back" onLeftAction={onBack} rightActionLabel="Logout" onRightAction={onLogout} />
+      <TopBar title="Profile" leftActionLabel="Back" onLeftAction={onBack} />
 
-      <View style={styles.heroCard}>
-        <Text style={styles.kicker}>Welcome</Text>
+      <View style={styles.profileHeader}>
+        <Pressable style={styles.heroAvatar} onPress={() => setShowPhotoViewer(true)}>
+          <UserAvatar photoBase64={profile.photoBase64} label={profile.fullName} size={104} />
+        </Pressable>
         <Text style={styles.heroTitle}>{profile.fullName}</Text>
         <Text style={styles.heroSubtitle}>Your NFC identity is fixed. Your description is the editable part, like on WhatsApp.</Text>
+        <Pressable style={styles.logoutButton} onPress={onLogout}>
+          <Text style={styles.logoutButtonText}>Logout</Text>
+        </Pressable>
       </View>
 
       <SectionCard title="Identity Profile">
-        {profile.photoBase64 ? (
-          <Pressable onPress={() => setShowPhotoViewer(true)}>
-            <Image source={{ uri: toImageUri(profile.photoBase64)! }} style={styles.avatar} />
-          </Pressable>
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarPlaceholderText}>
-              {profile.firstName[0]}
-              {profile.lastName[0]}
-            </Text>
-          </View>
-        )}
         <ProfileRow label="User ID" value={profile.documentNumber} />
         <ProfileRow label="First name" value={profile.firstName} />
         <ProfileRow label="Last name" value={profile.lastName} />
@@ -83,6 +101,26 @@ export function WelcomeScreen({ profile, onBack, onLogout, onEditAddress, onProf
           {saving ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Save description</Text>}
         </Pressable>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      </SectionCard>
+
+      <SectionCard title="Privacy">
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleCopy}>
+            <Text style={styles.toggleTitle}>Show photo to others</Text>
+            <Text style={styles.toggleText}>Let other people see your profile photo.</Text>
+          </View>
+          <Switch value={showPhotoToOthers} onValueChange={setShowPhotoToOthers} trackColor={{ true: colors.primary }} />
+        </View>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleCopy}>
+            <Text style={styles.toggleTitle}>Show age to others</Text>
+            <Text style={styles.toggleText}>Let other people see your age on your profile.</Text>
+          </View>
+          <Switch value={showAgeToOthers} onValueChange={setShowAgeToOthers} trackColor={{ true: colors.primary }} />
+        </View>
+        <Pressable style={[styles.primaryButton, saving && styles.buttonDisabled]} onPress={handleSavePrivacy} disabled={saving}>
+          {saving ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Save privacy</Text>}
+        </Pressable>
       </SectionCard>
 
       <SectionCard title="Home Area">
@@ -113,20 +151,15 @@ function ProfileRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  heroCard: {
+  profileHeader: {
+    alignItems: 'center',
     backgroundColor: '#0D5E57',
     borderRadius: 24,
     padding: spacing.lg,
     marginBottom: spacing.md
   },
-  kicker: {
-    color: '#9AE6D8',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1
-  },
   heroTitle: {
-    marginTop: spacing.xs,
+    marginTop: spacing.md,
     color: '#ffffff',
     fontWeight: '800',
     fontSize: 28
@@ -134,28 +167,26 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     marginTop: spacing.sm,
     color: '#D7F5EE',
-    lineHeight: 22
+    lineHeight: 22,
+    textAlign: 'center'
   },
-  avatar: {
-    width: 96,
-    height: 120,
-    borderRadius: 18,
-    marginBottom: spacing.md,
-    backgroundColor: '#E5E7EB'
+  heroAvatar: {
+    marginBottom: spacing.md
   },
-  avatarPlaceholder: {
-    width: 96,
-    height: 120,
-    borderRadius: 18,
-    marginBottom: spacing.md,
-    backgroundColor: '#D7F5EE',
+  logoutButton: {
+    marginTop: spacing.md,
+    minHeight: 42,
+    borderRadius: 999,
+    paddingHorizontal: spacing.lg,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)'
   },
-  avatarPlaceholderText: {
-    color: '#0D5E57',
-    fontWeight: '800',
-    fontSize: 28
+  logoutButtonText: {
+    color: '#ffffff',
+    fontWeight: '800'
   },
   row: {
     paddingVertical: spacing.sm,
@@ -216,5 +247,26 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: colors.text,
     fontWeight: '700'
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border
+  },
+  toggleCopy: {
+    flex: 1
+  },
+  toggleTitle: {
+    color: colors.text,
+    fontWeight: '800'
+  },
+  toggleText: {
+    color: colors.textMuted,
+    marginTop: 4,
+    lineHeight: 18
   }
 });
