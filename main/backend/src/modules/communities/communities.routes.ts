@@ -19,6 +19,22 @@ communitiesRouter.post('/:communityId/join', ...protectedRoute, asyncHandler(com
 communitiesRouter.post('/:communityId/leave', ...protectedRoute, asyncHandler(communitiesController.leaveGroup));
 communitiesRouter.delete('/:communityId', ...protectedRoute, asyncHandler(communitiesController.deleteGroup));
 communitiesRouter.post('/:communityId/messages', ...protectedRoute, asyncHandler(communitiesController.sendGroupMessage));
+communitiesRouter.post('/:communityId/events', ...protectedRoute, asyncHandler(communitiesController.createGroupEvent));
+communitiesRouter.post(
+  '/:communityId/events/:eventMessageId/approve',
+  ...protectedRoute,
+  asyncHandler(communitiesController.approveGroupEvent)
+);
+communitiesRouter.post(
+  '/:communityId/events/:eventMessageId/reject',
+  ...protectedRoute,
+  asyncHandler(communitiesController.rejectGroupEvent)
+);
+communitiesRouter.post(
+  '/:communityId/events/:eventMessageId/attendance',
+  ...protectedRoute,
+  asyncHandler(communitiesController.toggleEventAttendance)
+);
 communitiesRouter.post(
   '/:communityId/invite',
   ...protectedRoute,

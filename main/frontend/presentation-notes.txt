@@ -1,0 +1,69 @@
+TIMHood Presentation Notes
+
+Core idea
+TIMHood is a neighborhood app built around real identity, real location, and real community membership. The goal is to create a safer local social network where people know they are interacting with actual neighbors, not anonymous or fake accounts.
+
+Why the NFC login is more complex than reading a normal NFC tag
+A normal NFC tag read is usually very simple:
+- detect the tag
+- read a UID or NDEF payload
+- return plain data
+
+TIMHood does something much more advanced:
+- it reads the Romanian electronic identity card chip as a smartcard over IsoDep
+- it uses the CAN entered by the user
+- it establishes secure access with PACE
+- it reads structured identity files from the document chip
+- it extracts verified identity information and the portrait photo
+
+This means the app is not just "scanning an NFC tag". It is opening a secure smartcard session with an official identity document.
+
+Technical points that prove the added complexity
+- The app does not rely on simple tag text records.
+- It communicates with the ID card over Android's IsoDep interface.
+- It reads EF.CardAccess to discover the card's PACE configuration.
+- It creates a CAN-based PACE key and performs secure authentication with the chip.
+- After secure access is established, it reads ICAO LDS data groups such as DG1, DG2, DG11, and DG12.
+- DG1 contains identity data, DG2 contains the face image, and other groups may contain additional official details.
+- This is a secure document-reading flow, not a generic NFC tag flow.
+
+How it is inspired by the Linux eID / CEI reader approach
+The Android implementation follows the same general model used by desktop and Linux electronic identity readers:
+- use the CAN as the access secret
+- perform PACE
+- read standardized identity data groups from the chip
+- parse official identity and photo data
+
+So even though this app uses Android-native NFC code instead of a Linux binary, it is clearly inspired by the same standards and workflow as Linux eID reader applications.
+
+Why this matters for the product
+The NFC identity flow gives the app a strong trust foundation:
+- each user begins from a real government identity document
+- profile data is tied to verified identity information
+- the app can reduce fake accounts and impersonation
+- trust between neighbors becomes much easier to establish
+
+Interactive map and neighborhood connection
+TIMHood also uses an interactive neighborhood map:
+- the user can resolve the home address to a neighborhood
+- or drop a pin directly on the map
+- the app matches the coordinates against official neighborhood polygons
+- this creates a real connection between identity and community location
+
+This is important because the app is not just about who the user is, but also where they belong in the local community.
+
+The bigger vision
+TIMHood is designed as a local community platform where:
+- people are real
+- identity is verified
+- neighborhood belonging is grounded in map data
+- interactions happen in a safer environment
+
+This supports a better kind of social network:
+- more accountability
+- less anonymity abuse
+- more trust in groups, chats, and local relationships
+- a stronger sense of real neighborhood community
+
+Simple closing message
+TIMHood combines secure NFC identity reading, verified profile data, and neighborhood-based mapping to create a community app where people are real, local, and safer to interact with.

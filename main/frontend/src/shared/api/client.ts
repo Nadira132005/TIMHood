@@ -1,5 +1,5 @@
 const getApiBaseUrl = () => {
-  return "https://9f47-89-123-41-212.ngrok-free.app/api";
+  return "https://a056-89-238-252-115.ngrok-free.app/api";
 };
 
 type AuthHeadersOptions = {

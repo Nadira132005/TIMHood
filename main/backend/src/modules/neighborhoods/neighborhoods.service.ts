@@ -101,32 +101,28 @@ async function getCanonicalNeighborhood(name: string) {
 async function geocodeAddress(
   addressLabel: string,
 ): Promise<[number, number] | null> {
-  const searchUrl = new URL("https://nominatim.openstreetmap.org/search");
-  searchUrl.searchParams.set("format", "jsonv2");
-  searchUrl.searchParams.set("limit", "1");
-  searchUrl.searchParams.set("countrycodes", "ro");
-  searchUrl.searchParams.set("q", `${addressLabel}, Timisoara, Romania`);
-
-  const response = await fetch(searchUrl, {
-    headers: {
-      "User-Agent": "TimHood/0.1 neighborhood resolver",
-      "Accept-Language": "ro,en",
-    },
+  const params = new URLSearchParams({
+    address: `${addressLabel}, Timisoara, Romania`,
+    key: process.env.GOOGLE_MAPS_API_KEY!,
   });
 
+  const response = await fetch(
+    `https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`,
+  );
+
   if (!response.ok) {
-    throw new HttpError(502, "Unable to geocode address right now");
+    throw new Error("Failed to call Google Geocoding API");
   }
 
-  const results = (await response.json()) as Array<{
-    lon: string;
-    lat: string;
-  }>;
-  if (!results.length) {
+  const data = await response.json();
+
+  if (data.status !== "OK" || !data.results.length) {
     return null;
   }
 
-  return [Number(results[0].lon), Number(results[0].lat)];
+  const { lat, lng } = data.results[0].geometry.location;
+
+  return [lng, lat];
 }
 
 export const neighborhoodsService = {

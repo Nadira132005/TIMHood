@@ -45,6 +45,21 @@ type GroupMembersResponse = {
   requesterRole: 'owner' | 'admin' | 'member';
   members: GroupMember[];
   invitableFriends: Array<{ userId: string; fullName: string }>;
+  pendingEvents: Array<{
+    id: string;
+    threadId: string;
+    title: string;
+    description?: string;
+    startAt: string;
+    endAt: string;
+    locationLabel: string;
+    createdAt: string;
+    createdBy: {
+      userId: string;
+      userName: string;
+      userPhotoBase64?: string;
+    };
+  }>;
 };
 
 type PublicProfile = {
@@ -125,6 +140,23 @@ export function GroupMembersScreen({ profile, groupId, onBack, onOpenChat }: Pro
       setError(null);
     } catch (inviteError) {
       setError(inviteError instanceof Error ? inviteError.message : 'Unable to invite friend.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleEventDecision(eventId: string, approve: boolean) {
+    setSubmitting(true);
+    try {
+      await apiPost(
+        `/communities/${groupId}/events/${eventId}/${approve ? 'approve' : 'reject'}`,
+        {},
+        profile.userId
+      );
+      await reload();
+      setError(null);
+    } catch (decisionError) {
+      setError(decisionError instanceof Error ? decisionError.message : 'Unable to update event moderation.');
     } finally {
       setSubmitting(false);
     }
@@ -259,6 +291,44 @@ export function GroupMembersScreen({ profile, groupId, onBack, onOpenChat }: Pro
               </View>
             ))}
           </SectionCard>
+
+          {canManage ? (
+            <SectionCard title="Pending Events">
+              {data.pendingEvents.length ? (
+                data.pendingEvents.map((event) => (
+                  <View key={event.id} style={styles.pendingEventRow}>
+                    <View style={styles.pendingEventCopy}>
+                      <Text style={styles.memberName}>{event.title}</Text>
+                      <Text style={styles.memberMeta}>
+                        {new Date(event.startAt).toLocaleString()} - {new Date(event.endAt).toLocaleString()}
+                      </Text>
+                      <Text style={styles.bodyText}>Location: {event.locationLabel}</Text>
+                      <Text style={styles.bodyText}>By {event.createdBy.userName}</Text>
+                      {event.description ? <Text style={styles.bodyText}>{event.description}</Text> : null}
+                    </View>
+                    <View style={styles.pendingEventActions}>
+                      <Pressable
+                        style={[styles.actionButton, submitting && styles.buttonDisabled]}
+                        onPress={() => handleEventDecision(event.id, true)}
+                        disabled={submitting}
+                      >
+                        <Text style={styles.actionButtonText}>Approve</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.rejectButton, submitting && styles.buttonDisabled]}
+                        onPress={() => handleEventDecision(event.id, false)}
+                        disabled={submitting}
+                      >
+                        <Text style={styles.rejectButtonText}>Reject</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.bodyText}>No pending events right now.</Text>
+              )}
+            </SectionCard>
+          ) : null}
 
           {canManage && data.group.visibility === 'private' ? (
             <SectionCard title="Invite Friends">
@@ -410,6 +480,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border
   },
+  pendingEventRow: {
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.sm
+  },
+  pendingEventCopy: {
+    gap: 4
+  },
+  pendingEventActions: {
+    flexDirection: 'row',
+    gap: spacing.sm
+  },
   actionButton: {
     minHeight: 38,
     borderRadius: 12,
@@ -419,6 +502,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   actionButtonText: {
+    color: '#ffffff',
+    fontWeight: '800'
+  },
+  rejectButton: {
+    minHeight: 38,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#B42318',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  rejectButtonText: {
     color: '#ffffff',
     fontWeight: '800'
   },
