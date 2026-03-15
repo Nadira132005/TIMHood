@@ -19,6 +19,9 @@ export interface IUser {
   date_of_birth?: Date;
   date_of_expiry?: Date;
   profile_photo_base64?: string;
+  bio?: string;
+  show_photo_to_others: boolean;
+  show_age_to_others: boolean;
   home_address_label?: string;
   home_neighborhood?: string;
   last_seen_at?: Date;
@@ -52,6 +55,9 @@ const userSchema = new Schema<IUser>(
     date_of_birth: { type: Date },
     date_of_expiry: { type: Date },
     profile_photo_base64: { type: String },
+    bio: { type: String },
+    show_photo_to_others: { type: Boolean, default: true, required: true },
+    show_age_to_others: { type: Boolean, default: true, required: true },
     home_address_label: { type: String },
     home_neighborhood: { type: String },
     last_seen_at: { type: Date },

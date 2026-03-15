@@ -10,6 +10,8 @@ export type FixedIdentityProfile = {
   dateOfExpiry: string;
   photoBase64?: string;
   bio?: string;
+  showPhotoToOthers: boolean;
+  showAgeToOthers: boolean;
   documentIsValid: boolean;
   homeAddressLabel?: string;
   homeNeighborhood?: string | null;

@@ -18,12 +18,14 @@ type LoginResponse = {
 };
 
 const DEMO_CANS = new Set(['0000', '0001', '0002']);
+const RETRY_ERROR_MESSAGE = 'Something went wrong. Please retry and keep the ID card on the back of the phone.';
 
 export function LoginScreen({ onLogin }: Props) {
   const [can, setCan] = useState('');
   const [backendUrl, setBackendUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConnectionSettings, setShowConnectionSettings] = useState(false);
 
   React.useEffect(() => {
     let mounted = true;
@@ -49,17 +51,23 @@ export function LoginScreen({ onLogin }: Props) {
   }, []);
 
   async function handleReadCard() {
+    const trimmedCan = can.trim();
+    if (!/^\d{4,6}$/.test(trimmedCan)) {
+      setError('Enter the CAN from the Romanian ID card.');
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
     try {
       await saveApiBaseUrl(backendUrl);
-      const response = DEMO_CANS.has(can)
-        ? await apiPost<LoginResponse>('/identity/demo-login', { can })
-        : await apiPost<LoginResponse>('/identity/nfc-login', await readIdentityCard(can));
+      const response = DEMO_CANS.has(trimmedCan)
+        ? await apiPost<LoginResponse>('/identity/demo-login', { can: trimmedCan })
+        : await apiPost<LoginResponse>('/identity/nfc-login', await readIdentityCard(trimmedCan));
       onLogin(response.profile);
-    } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : 'Unable to read the ID card.');
+    } catch {
+      setError(RETRY_ERROR_MESSAGE);
     } finally {
       setBusy(false);
     }
@@ -68,26 +76,22 @@ export function LoginScreen({ onLogin }: Props) {
   return (
     <ScreenContainer>
       <View style={styles.hero}>
-        <Text style={styles.eyebrow}>Timhood Login</Text>
-        <Text style={styles.title}>Tap the Romanian ID card to sign in.</Text>
-        <Text style={styles.subtitle}>
-          The NFC read becomes the fixed account profile. The app stores document number, name,
-          nationality, birth date, expiry date, and photo from the card.
-        </Text>
+        <View style={styles.heroPanel}>
+          <View style={styles.brandPill}>
+            <Text style={styles.brandPillText}>TIMHood</Text>
+          </View>
+          <Text style={styles.welcomeLabel}>Welcome home</Text>
+          <Text style={styles.title}>Get to know your neighbours.</Text>
+          <Text style={styles.subtitle}>
+            Sign in now with your Romanian ID card and join the people, groups, and conversations around your neighborhood.
+          </Text>
+          <Text style={styles.microCopy}>
+            Your ID details stay fixed as your verified local profile.
+          </Text>
+        </View>
       </View>
 
-      <SectionCard title="Read ID">
-        <Text style={styles.label}>Backend URL</Text>
-        <TextInput
-          value={backendUrl}
-          onChangeText={setBackendUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="http://192.168.x.x:4000/api"
-          placeholderTextColor={colors.textMuted}
-          style={[styles.input, styles.backendInput]}
-          editable={!busy}
-        />
+      <SectionCard title="Sign In">
         <Text style={styles.label}>Card Access Number (CAN)</Text>
         <TextInput
           value={can}
@@ -98,35 +102,57 @@ export function LoginScreen({ onLogin }: Props) {
           style={styles.input}
           editable={!busy}
         />
+        <View style={styles.nfcHintCard}>
+          <Text style={styles.nfcHintTitle}>Keep the ID card on the back of the phone</Text>
+          <Text style={styles.nfcHintText}>Hold it steady during the full NFC read.</Text>
+        </View>
         <Pressable style={[styles.primaryButton, busy && styles.buttonDisabled]} onPress={handleReadCard} disabled={busy}>
-          {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Read ID with NFC</Text>}
+          {busy ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color="#ffffff" />
+              <Text style={styles.primaryButtonText}>Signing in...</Text>
+            </View>
+          ) : (
+            <Text style={styles.primaryButtonText}>Sign in now</Text>
+          )}
         </Pressable>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        <Pressable
+          style={styles.connectionToggle}
+          onPress={() => setShowConnectionSettings((value) => !value)}
+          disabled={busy}
+        >
+          <Text style={styles.connectionToggleText}>
+            {showConnectionSettings ? 'Hide connection settings' : 'Connection settings'}
+          </Text>
+        </Pressable>
+        {showConnectionSettings ? (
+          <View style={styles.connectionPanel}>
+            <Text style={styles.label}>Backend URL</Text>
+            <TextInput
+              value={backendUrl}
+              onChangeText={setBackendUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="http://192.168.x.x:4000/api"
+              placeholderTextColor={colors.textMuted}
+              style={[styles.input, styles.backendInput, styles.backendInputCompact]}
+              editable={!busy}
+            />
+          </View>
+        ) : null}
       </SectionCard>
 
-      <SectionCard title="How it works">
-        <Text style={styles.bodyText}>1. Enter the 6-digit CAN printed on the card.</Text>
-        <Text style={styles.bodyText}>2. Tap Read ID with NFC and hold the card behind the phone.</Text>
-        <Text style={styles.bodyText}>3. If the document is still valid, the user is created or signed in automatically.</Text>
-      </SectionCard>
-
-      <SectionCard title="Demo Users">
-        <Text style={styles.bodyText}>Use `0000`, `0001`, or `0002` to sign in as seeded Soarelui demo users without NFC.</Text>
-      </SectionCard>
-
-      <SectionCard title="Phone Without USB">
-        <Text style={styles.bodyText}>
-          To make the app work after reopening without `adb reverse`, set the backend URL to your Mac LAN IP, for example `http://192.168.50.152:4000/api`.
+      <View style={styles.footnoteBlock}>
+        <Text style={styles.footnoteText}>
+          Enter the CAN, tap sign in, and keep the ID card behind the phone until the read finishes.
         </Text>
-      </SectionCard>
-
-      <SectionCard title="Device Requirement">
-        <Text style={styles.bodyText}>
+        <Text style={styles.footnoteText}>
           {Platform.OS === 'android'
             ? 'This login needs an Android build with the id_reader native module and real NFC hardware.'
             : 'This screen is for Android NFC login. iOS and Expo Go cannot complete this flow yet.'}
         </Text>
-      </SectionCard>
+      </View>
     </ScreenContainer>
   );
 }
@@ -134,27 +160,55 @@ export function LoginScreen({ onLogin }: Props) {
 const styles = StyleSheet.create({
   hero: {
     marginBottom: spacing.lg,
-    paddingTop: spacing.lg
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md
   },
-  eyebrow: {
+  heroPanel: {
+    borderRadius: 26,
+    padding: spacing.lg,
+    backgroundColor: '#F0F9F7',
+    borderWidth: 1,
+    borderColor: '#CDEBE4'
+  },
+  brandPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#D7F5EE'
+  },
+  brandPillText: {
     color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8
+  },
+  welcomeLabel: {
+    marginTop: spacing.md,
+    color: '#0D5E57',
     fontSize: 13,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 1
+    letterSpacing: 1.1
   },
   title: {
     marginTop: spacing.xs,
     color: colors.text,
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 34,
+    lineHeight: 40,
     fontWeight: '800'
   },
   subtitle: {
     marginTop: spacing.sm,
     color: colors.textMuted,
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 22
+  },
+  microCopy: {
+    marginTop: spacing.sm,
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700'
   },
   label: {
     color: colors.text,
@@ -175,12 +229,39 @@ const styles = StyleSheet.create({
   backendInput: {
     fontSize: 16
   },
+  backendInputCompact: {
+    marginBottom: 0
+  },
+  nfcHintCard: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: 14,
+    backgroundColor: '#EEF8F6',
+    borderWidth: 1,
+    borderColor: '#B7E4DB'
+  },
+  nfcHintTitle: {
+    color: colors.primary,
+    fontWeight: '800',
+    fontSize: 15
+  },
+  nfcHintText: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    lineHeight: 20
+  },
   primaryButton: {
     backgroundColor: colors.primary,
     minHeight: 52,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
   },
   buttonDisabled: {
     opacity: 0.7
@@ -195,9 +276,28 @@ const styles = StyleSheet.create({
     color: '#B42318',
     lineHeight: 20
   },
-  bodyText: {
-    color: colors.text,
-    lineHeight: 22,
-    marginBottom: spacing.xs
+  footnoteBlock: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs
+  },
+  footnoteText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17
+  },
+  connectionToggle: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start'
+  },
+  connectionToggleText: {
+    color: colors.primary,
+    fontWeight: '700'
+  },
+  connectionPanel: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border
   }
 });

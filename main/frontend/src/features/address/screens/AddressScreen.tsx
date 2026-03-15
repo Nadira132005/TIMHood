@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,11 +10,11 @@ import {
   useWindowDimensions,
   View
 } from 'react-native';
-import Svg, { Circle, Polygon } from 'react-native-svg';
 
-import { apiGet, apiPost } from '../../../shared/api/client';
+import { apiGet, apiPost, getApiBaseUrl } from '../../../shared/api/client';
 import { FixedIdentityProfile } from '../../../shared/state/session';
 import { colors, spacing } from '../../../shared/theme/tokens';
+import { ImageViewerModal } from '../../../shared/ui/ImageViewerModal';
 import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
 import { SectionCard } from '../../../shared/ui/SectionCard';
 import { TopBar } from '../../../shared/ui/TopBar';
@@ -66,24 +67,47 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
   const [mapExpanded, setMapExpanded] = useState(false);
   const [resolvedLocation, setResolvedLocation] = useState<[number, number] | null>(null);
   const [resolutionMessage, setResolutionMessage] = useState<string | null>(null);
+  const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
+  const [showMapViewer, setShowMapViewer] = useState(false);
+  const [neighborhoodQuery, setNeighborhoodQuery] = useState('');
 
   const sortedNeighborhoods = [...neighborhoods].sort((a, b) => a.name.localeCompare(b.name));
-  const allPoints = neighborhoods.flatMap((item) => item.polygons.flat()).map(([lng, lat]) => [lng, -lat] as [number, number]);
-  const minX = allPoints.length ? Math.min(...allPoints.map(([x]) => x)) : 0;
-  const maxX = allPoints.length ? Math.max(...allPoints.map(([x]) => x)) : 100;
-  const minY = allPoints.length ? Math.min(...allPoints.map(([, y]) => y)) : 0;
-  const maxY = allPoints.length ? Math.max(...allPoints.map(([, y]) => y)) : 100;
-  const viewBoxPadding = 0.003;
+  const filteredNeighborhoods = sortedNeighborhoods.filter((item) =>
+    item.name.toLowerCase().includes(neighborhoodQuery.trim().toLowerCase())
+  );
+  const highlightedNeighborhood = sortedNeighborhoods.find((item) => item.name === selectedNeighborhood) || null;
   const mapWidth = Math.max(280, width - 64);
-  const rawMapHeight = maxY - minY || 1;
-  const rawMapWidth = maxX - minX || 1;
-  const mapAspectRatio = rawMapHeight / rawMapWidth;
-  const mapHeight = mapExpanded ? mapWidth * Math.max(0.9, mapAspectRatio) : mapWidth * Math.max(0.65, mapAspectRatio);
+  const mapHeight = mapExpanded ? mapWidth * 1.18 : mapWidth * 0.82;
+
+  async function loadNeighborhoods() {
+    setLoadingNeighborhoods(true);
+    try {
+      const response = await apiGet<NeighborhoodOption[]>('/neighborhoods');
+      setNeighborhoods(response);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load neighborhoods.');
+    } finally {
+      setLoadingNeighborhoods(false);
+    }
+  }
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadNeighborhoods() {
+    void (async () => {
+      try {
+        const apiBaseUrl = await getApiBaseUrl();
+        const assetBaseUrl = apiBaseUrl.replace(/\/api\/?$/i, '');
+        if (mounted) {
+          setMapImageUrl(`${assetBaseUrl}/assets/map.png`);
+        }
+      } catch {
+        if (mounted) {
+          setMapImageUrl(null);
+        }
+      }
+
       setLoadingNeighborhoods(true);
       try {
         const response = await apiGet<NeighborhoodOption[]>('/neighborhoods');
@@ -100,9 +124,7 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           setLoadingNeighborhoods(false);
         }
       }
-    }
-
-    void loadNeighborhoods();
+    })();
 
     return () => {
       mounted = false;
@@ -199,7 +221,7 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           <Text style={styles.eyebrow}>Neighborhood Setup</Text>
           <Text style={styles.title}>Choose where you belong</Text>
           <Text style={styles.subtitle}>
-            Type your street to auto-detect the neighborhood from coordinates, or tap the real neighborhood polygons on the map.
+            Type your street to auto-detect the neighborhood from coordinates, then confirm it with the official neighborhood map.
           </Text>
         </View>
 
@@ -233,17 +255,41 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
               <ActivityIndicator color={colors.primary} />
               <Text style={styles.helperText}>Loading neighborhoods...</Text>
             </View>
+          ) : neighborhoods.length === 0 ? (
+            <View style={styles.errorBlock}>
+              <Text style={styles.errorTitle}>Neighborhood map could not be loaded</Text>
+              <Text style={styles.errorText}>{error ?? 'No neighborhoods were returned by the app right now.'}</Text>
+              <Pressable style={styles.retryButton} onPress={() => void loadNeighborhoods()}>
+                <Text style={styles.retryButtonText}>Try again</Text>
+              </Pressable>
+            </View>
           ) : (
             <View style={styles.selectorLayout}>
               <View style={styles.listHeader}>
-                <Text style={styles.listTitle}>All neighborhoods ({sortedNeighborhoods.length})</Text>
+                <Text style={styles.listTitle}>Find your neighborhood</Text>
                 <Pressable onPress={() => setMapExpanded((value) => !value)}>
                   <Text style={styles.expandText}>{mapExpanded ? 'Minimize map' : 'Maximize map'}</Text>
                 </Pressable>
               </View>
 
+              <TextInput
+                value={neighborhoodQuery}
+                onChangeText={setNeighborhoodQuery}
+                placeholder="Search neighborhood name"
+                placeholderTextColor={colors.textMuted}
+                style={styles.searchInput}
+              />
+
+              {highlightedNeighborhood ? (
+                <View style={styles.selectedCard}>
+                  <Text style={styles.selectedLabel}>Selected neighborhood</Text>
+                  <Text style={styles.selectedTitle}>{highlightedNeighborhood.name}</Text>
+                  {resolutionMessage ? <Text style={styles.selectedBody}>{resolutionMessage}</Text> : null}
+                </View>
+              ) : null}
+
               <View style={styles.listColumn}>
-                {sortedNeighborhoods.map((neighborhood) => {
+                {filteredNeighborhoods.map((neighborhood) => {
                   const active = selectedNeighborhood === neighborhood.name;
 
                   return (
@@ -258,41 +304,28 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
                     </Pressable>
                   );
                 })}
+                {!filteredNeighborhoods.length ? <Text style={styles.helperText}>No neighborhood matches this search.</Text> : null}
               </View>
 
               <View style={styles.mapCard}>
                 <Text style={styles.mapTitle}>Official neighborhood map</Text>
-                <View style={[styles.svgWrap, { height: mapHeight }]}>
-                  <Svg
-                    width="100%"
-                    height="100%"
-                    viewBox={`${minX - viewBoxPadding} ${minY - viewBoxPadding} ${rawMapWidth + viewBoxPadding * 2} ${
-                      rawMapHeight + viewBoxPadding * 2
-                    }`}
-                  >
-                    {neighborhoods.map((neighborhood) => {
-                      const active = selectedNeighborhood === neighborhood.name;
-
-                      return neighborhood.polygons.map((ring, index) => (
-                        <Polygon
-                          key={`${neighborhood.id}-${index}`}
-                          points={ring.map(([lng, lat]) => `${lng},${-lat}`).join(' ')}
-                          fill={active ? '#8FD9CA' : '#E6F2EF'}
-                          stroke={active ? '#0D5E57' : '#7BA59C'}
-                          strokeWidth={0.0005}
-                          onPress={() => setSelectedNeighborhood(neighborhood.name)}
-                        />
-                      ));
-                    })}
-                    {resolvedLocation ? (
-                      <Circle cx={resolvedLocation[0]} cy={-resolvedLocation[1]} r={0.0008} fill="#B42318" />
-                    ) : null}
-                  </Svg>
-                </View>
+                {mapImageUrl ? (
+                  <Pressable onPress={() => setShowMapViewer(true)}>
+                    <Image
+                      source={{ uri: mapImageUrl }}
+                      resizeMode="contain"
+                      style={[styles.mapImage, { height: mapHeight }]}
+                    />
+                  </Pressable>
+                ) : (
+                  <View style={[styles.mapPlaceholder, { height: mapHeight }]}>
+                    <Text style={styles.helperText}>Map image is not available right now.</Text>
+                  </View>
+                )}
                 <Text style={styles.mapHint}>
                   {selectedNeighborhood
                     ? `Selected neighborhood: ${selectedNeighborhood}`
-                    : 'Select a neighborhood from the list or tap a polygon on the map.'}
+                    : 'Search and select a neighborhood after checking the official map image.'}
                 </Text>
               </View>
             </View>
@@ -308,6 +341,13 @@ export function AddressScreen({ profile, onBack, onCompleted }: Props) {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </SectionCard>
       </ScrollView>
+
+      <ImageViewerModal
+        visible={showMapViewer}
+        imageUri={mapImageUrl}
+        title="Neighborhood map"
+        onClose={() => setShowMapViewer(false)}
+      />
     </ScreenContainer>
   );
 }
@@ -375,6 +415,19 @@ const styles = StyleSheet.create({
   helperText: {
     color: colors.textMuted
   },
+  errorBlock: {
+    gap: spacing.sm,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3B3AD',
+    backgroundColor: '#FFF1EF',
+    padding: spacing.md
+  },
+  errorTitle: {
+    color: '#7A271A',
+    fontWeight: '800',
+    fontSize: 15
+  },
   helperSuccess: {
     color: colors.primary,
     fontWeight: '700',
@@ -394,9 +447,44 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15
   },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    color: colors.text,
+    fontSize: 15,
+    backgroundColor: 'rgba(255,255,255,0.82)'
+  },
   expandText: {
     color: colors.primary,
     fontWeight: '800'
+  },
+  selectedCard: {
+    borderRadius: 18,
+    padding: spacing.md,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 140, 124, 0.18)'
+  },
+  selectedLabel: {
+    color: colors.accent,
+    fontWeight: '800',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8
+  },
+  selectedTitle: {
+    marginTop: 4,
+    color: colors.text,
+    fontWeight: '800',
+    fontSize: 20
+  },
+  selectedBody: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    lineHeight: 20
   },
   listColumn: {
     flexDirection: 'row',
@@ -435,10 +523,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: spacing.sm
   },
-  svgWrap: {
+  mapImage: {
+    width: '100%',
+    borderRadius: 18,
+    backgroundColor: '#FDFEFE'
+  },
+  mapPlaceholder: {
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#FDFEFE'
+    backgroundColor: '#FDFEFE',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   mapHint: {
     marginTop: spacing.sm,
@@ -460,6 +555,17 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.7
+  },
+  retryButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#B42318'
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontWeight: '800'
   },
   errorText: {
     color: '#B42318',

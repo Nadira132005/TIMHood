@@ -14,8 +14,8 @@ type Props = {
   onOpenNeighborhoodGroup(groupId: string): void;
   onOpenDiscoverGroups(): void;
   onOpenJoinedGroups(): void;
+  onOpenFriends(): void;
   onOpenFriendRequests(): void;
-  onLogout(): void;
 };
 
 type NeighborhoodSummary = {
@@ -62,8 +62,8 @@ export function DashboardScreen({
   onOpenNeighborhoodGroup,
   onOpenDiscoverGroups,
   onOpenJoinedGroups,
-  onOpenFriendRequests,
-  onLogout
+  onOpenFriends,
+  onOpenFriendRequests
 }: Props) {
   const [data, setData] = useState<NeighborhoodChatResponse | null>(null);
   const [neighborhoodGroupId, setNeighborhoodGroupId] = useState<string | null>(null);
@@ -115,8 +115,6 @@ export function DashboardScreen({
     <ScreenContainer>
       <TopBar
         title="Neighborhood"
-        leftActionLabel="Logout"
-        onLeftAction={onLogout}
         rightActionLabel="Profile"
         onRightAction={onOpenProfile}
       />
@@ -159,24 +157,14 @@ export function DashboardScreen({
             </SectionCard>
           </Pressable>
 
-          <SectionCard title="Latest Activity">
-            {data.messages.length ? (
-              data.messages.slice(-3).map((message) => (
-                <View key={message.id} style={styles.messagePreview}>
-                  <Text style={styles.messagePreviewAuthor}>{message.userName}</Text>
-                  <Text style={styles.bodyText}>{message.text ? message.text : 'Sent a photo'}</Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.bodyText}>No messages yet in the neighborhood.</Text>
-            )}
-          </SectionCard>
-
           <Pressable style={styles.primaryButtonAlt} onPress={onOpenDiscoverGroups}>
             <Text style={styles.primaryButtonAltText}>Discover groups</Text>
           </Pressable>
           <Pressable style={styles.primaryButtonAlt} onPress={onOpenJoinedGroups}>
             <Text style={styles.primaryButtonAltText}>Your groups</Text>
+          </Pressable>
+          <Pressable style={styles.primaryButtonAlt} onPress={onOpenFriends}>
+            <Text style={styles.primaryButtonAltText}>Friends</Text>
           </Pressable>
           <Pressable style={styles.primaryButtonAlt} onPress={onOpenFriendRequests}>
             <Text style={styles.primaryButtonAltText}>Requests</Text>
@@ -184,9 +172,6 @@ export function DashboardScreen({
         </>
       ) : null}
 
-      <Pressable style={styles.secondaryButton} onPress={onOpenProfile}>
-        <Text style={styles.secondaryButtonText}>Open profile</Text>
-      </Pressable>
     </ScreenContainer>
   );
 }
@@ -238,16 +223,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 22
   },
-  messagePreview: {
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border
-  },
-  messagePreviewAuthor: {
-    color: colors.text,
-    fontWeight: '800',
-    marginBottom: 4
-  },
   groupCardPressable: {
     borderRadius: 20
   },
@@ -270,19 +245,5 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '800',
     fontSize: 16
-  },
-  secondaryButton: {
-    marginTop: spacing.sm,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface
-  },
-  secondaryButtonText: {
-    color: colors.text,
-    fontWeight: '700'
   }
 });

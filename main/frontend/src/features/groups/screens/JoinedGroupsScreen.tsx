@@ -22,7 +22,7 @@ type GroupCard = {
   membersCount: number;
   role?: string;
   visibility: 'public' | 'private';
-  groupKind: 'standard' | 'private';
+  groupKind: 'standard' | 'custom';
   neighborhoodName?: string;
 };
 

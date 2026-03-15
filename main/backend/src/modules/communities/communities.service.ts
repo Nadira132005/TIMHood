@@ -22,15 +22,17 @@ type CommunityListItem = {
   membersCount: number;
   role?: string;
   visibility: 'public' | 'private';
-  groupKind: 'standard' | 'private';
+  groupKind: 'standard' | 'custom';
   neighborhoodName?: string;
+  canDelete?: boolean;
+  canLeave?: boolean;
 };
 
 type DiscoverGroupsResponse = {
   neighborhoodName: string;
   joinedGroups: CommunityListItem[];
   standardGroups: CommunityListItem[];
-  privateGroups: CommunityListItem[];
+  publicGroups: CommunityListItem[];
   friends: Array<{ userId: string; fullName: string }>;
 };
 
@@ -88,6 +90,23 @@ function buildSlug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
+}
+
+function canDeleteCommunity(community: { group_kind: string; created_by_user_id: string }, userId: string) {
+  return community.group_kind === 'custom' && community.created_by_user_id === userId;
+}
+
+function canLeaveCommunity(
+  community: { group_kind: string; group_key?: string | null },
+  membership?: { role?: string } | null
+) {
+  if (!membership) {
+    return false;
+  }
+  if (community.group_kind === 'standard' && community.group_key === 'general-announcements') {
+    return false;
+  }
+  return true;
 }
 
 async function ensureCommunitySettings(communityId: string, ownerUserId: string) {
@@ -206,7 +225,9 @@ async function mapMemberships(userId: string) {
       role: membership?.role,
       visibility: community.visibility,
       groupKind: community.group_kind,
-      neighborhoodName: community.neighborhood_name
+      neighborhoodName: community.neighborhood_name,
+      canDelete: canDeleteCommunity(community, userId),
+      canLeave: canLeaveCommunity(community, membership)
     } satisfies CommunityListItem;
   });
 }
@@ -297,7 +318,7 @@ export const communitiesService = {
       await ensureDefaultMembershipsForNeighborhoodUsers(neighborhoodName, userId);
     }
 
-    const [joinedGroups, standardGroups, friends] = await Promise.all([
+    const [joinedGroups, standardGroups, publicCustomGroups, friends] = await Promise.all([
       mapMemberships(userId),
       Community.find({
         neighborhood_name: neighborhoodName,
@@ -306,10 +327,18 @@ export const communitiesService = {
       })
         .sort({ name: 1 })
         .lean(),
+      Community.find({
+        neighborhood_name: neighborhoodName,
+        group_kind: 'custom',
+        visibility: 'public',
+        state: 'active'
+      })
+        .sort({ name: 1 })
+        .lean(),
       mapFriends(userId)
     ]);
 
-    const privateGroups = joinedGroups.filter((group) => group.groupKind === 'private');
+    const joinedGroupIds = new Set(joinedGroups.map((group) => group.id));
 
     return {
       neighborhoodName,
@@ -322,9 +351,24 @@ export const communitiesService = {
         membersCount: community.members_count,
         visibility: community.visibility,
         groupKind: community.group_kind,
-        neighborhoodName: community.neighborhood_name
+        neighborhoodName: community.neighborhood_name,
+        canDelete: canDeleteCommunity(community, userId),
+        canLeave: canLeaveCommunity(community)
       })),
-      privateGroups,
+      publicGroups: publicCustomGroups
+        .filter((community) => !joinedGroupIds.has(String(community._id)))
+        .map((community) => ({
+          id: String(community._id),
+          name: community.name,
+          slug: community.slug,
+          description: community.description,
+          membersCount: community.members_count,
+          visibility: community.visibility,
+          groupKind: community.group_kind,
+          neighborhoodName: community.neighborhood_name,
+          canDelete: canDeleteCommunity(community, userId),
+          canLeave: canLeaveCommunity(community)
+        })),
       friends
     };
   },
@@ -333,6 +377,9 @@ export const communitiesService = {
     const community = await Community.findById(communityId);
     if (!community || community.state !== 'active') {
       throw new HttpError(404, 'Group not found');
+    }
+    if (community.visibility === 'private') {
+      throw new HttpError(403, 'Private groups require an invitation');
     }
 
     const existing = await CommunityMembership.findOne({ community_id: community._id, user_id: userId });
@@ -377,7 +424,9 @@ export const communitiesService = {
         role: membership?.role,
         visibility: community.visibility,
         groupKind: community.group_kind,
-        neighborhoodName: community.neighborhood_name
+        neighborhoodName: community.neighborhood_name,
+        canDelete: canDeleteCommunity(community, userId),
+        canLeave: canLeaveCommunity(community, membership)
       },
       joined: Boolean(membership),
       canViewMembers: Boolean(membership)
@@ -401,7 +450,9 @@ export const communitiesService = {
         role: membership.role,
         visibility: community.visibility,
         groupKind: community.group_kind,
-        neighborhoodName: community.neighborhood_name
+        neighborhoodName: community.neighborhood_name,
+        canDelete: canDeleteCommunity(community, userId),
+        canLeave: canLeaveCommunity(community, membership)
       },
       canViewMembers: true,
       messages: messages.map((message) => ({
@@ -458,19 +509,30 @@ export const communitiesService = {
     };
   },
 
-  async createPrivateGroup(userId: string, payload: { name: string; description?: string; memberUserIds?: string[] }) {
+  async createGroup(
+    userId: string,
+    payload: { name: string; description?: string; memberUserIds?: string[]; visibility?: 'public' | 'private' }
+  ) {
     const name = payload.name.trim();
     if (!name) {
       throw new HttpError(400, 'name is required');
     }
 
+    const visibility = payload.visibility === 'private' ? 'private' : 'public';
     const uniqueMemberIds = Array.from(new Set((payload.memberUserIds || []).filter(Boolean)));
     const friends = await mapFriends(userId);
     const friendIds = new Set(friends.map((friend) => friend.userId));
+    const creator = await User.findById(userId).select('home_neighborhood').lean();
 
-    for (const memberId of uniqueMemberIds) {
-      if (!friendIds.has(memberId)) {
-        throw new HttpError(400, 'Private groups can include only accepted friends');
+    if (!creator?.home_neighborhood) {
+      throw new HttpError(400, 'User has no neighborhood yet');
+    }
+
+    if (visibility === 'private') {
+      for (const memberId of uniqueMemberIds) {
+        if (!friendIds.has(memberId)) {
+          throw new HttpError(400, 'Private groups can include only accepted friends');
+        }
       }
     }
 
@@ -479,11 +541,11 @@ export const communitiesService = {
       slug: `${buildSlug(name)}-${Date.now()}`,
       description: payload.description?.trim(),
       created_by_user_id: userId,
-      neighborhood_name: undefined,
-      group_kind: 'private',
-      visibility: 'private',
+      neighborhood_name: creator.home_neighborhood,
+      group_kind: 'custom',
+      visibility,
       state: 'active',
-      members_count: 1 + uniqueMemberIds.length
+      members_count: 1
     });
 
     await ensureCommunitySettings(String(community._id), userId);
@@ -496,42 +558,60 @@ export const communitiesService = {
       joined_at: new Date()
     });
 
-    if (uniqueMemberIds.length) {
-      await CommunityMembership.insertMany(
-        uniqueMemberIds.map((memberId) => ({
-          community_id: community._id,
-          user_id: memberId,
-          role: 'member',
-          status: 'active',
-          invited_by_user_id: userId,
-          approved_by_user_id: userId,
-          joined_at: new Date()
-        }))
-      );
+    if (visibility === 'private' && uniqueMemberIds.length) {
+      for (const memberId of uniqueMemberIds) {
+        await CommunityInvite.findOneAndUpdate(
+          {
+            community_id: community._id,
+            inviter_user_id: userId,
+            invitee_user_id: memberId
+          },
+          {
+            community_id: community._id,
+            inviter_user_id: userId,
+            invitee_user_id: memberId,
+            status: 'pending',
+            expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+            responded_at: undefined
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      }
     }
 
     return {
       id: String(community._id),
       name: community.name,
-      slug: community.slug
+      slug: community.slug,
+      visibility: community.visibility
     };
   },
 
   async getGroupMembers(userId: string, communityId: string): Promise<GroupMembersResponse> {
     const { community, membership } = await requireGroupAccess(userId, communityId);
-    const memberships = await CommunityMembership.find({
-      community_id: communityId,
-      status: 'active'
-    })
-      .select('user_id role status')
-      .lean();
+    const [memberships, pendingInvites, friends] = await Promise.all([
+      CommunityMembership.find({
+        community_id: communityId,
+        status: 'active'
+      })
+        .select('user_id role status')
+        .lean(),
+      CommunityInvite.find({
+        community_id: communityId,
+        status: 'pending',
+        expires_at: { $gt: new Date() }
+      })
+        .select('invitee_user_id')
+        .lean(),
+      mapFriends(userId)
+    ]);
 
     const users = await User.find({ _id: { $in: memberships.map((entry) => entry.user_id) } })
       .select('full_name bio profile_photo_base64')
       .lean();
 
-    const friends = await mapFriends(userId);
     const memberIds = new Set(memberships.map((entry) => entry.user_id));
+    const pendingInviteIds = new Set(pendingInvites.map((invite) => invite.invitee_user_id));
 
     return {
       group: {
@@ -543,7 +623,9 @@ export const communitiesService = {
         role: membership.role,
         visibility: community.visibility,
         groupKind: community.group_kind,
-        neighborhoodName: community.neighborhood_name
+        neighborhoodName: community.neighborhood_name,
+        canDelete: canDeleteCommunity(community, userId),
+        canLeave: canLeaveCommunity(community, membership)
       },
       requesterRole: membership.role,
       members: memberships.map((entry) => {
@@ -559,7 +641,7 @@ export const communitiesService = {
       }),
       invitableFriends:
         community.visibility === 'private' && (membership.role === 'owner' || membership.role === 'admin')
-          ? friends.filter((friend) => !memberIds.has(friend.userId))
+          ? friends.filter((friend) => !memberIds.has(friend.userId) && !pendingInviteIds.has(friend.userId))
           : []
     };
   },
@@ -714,5 +796,52 @@ export const communitiesService = {
     }
 
     return { accepted: true, communityId: String(invite.community_id) };
+  },
+
+  async leaveGroup(userId: string, communityId: string) {
+    const { community, membership } = await requireGroupAccess(userId, communityId);
+
+    if (!canLeaveCommunity(community, membership)) {
+      throw new HttpError(400, 'You cannot leave this group');
+    }
+
+    if (membership.role === 'owner') {
+      const otherActiveMembers = await CommunityMembership.countDocuments({
+        community_id: communityId,
+        user_id: { $ne: userId },
+        status: 'active'
+      });
+      if (otherActiveMembers > 0) {
+        throw new HttpError(400, 'Transfer or delete the group before leaving it');
+      }
+    }
+
+    await CommunityMembership.updateOne(
+      { community_id: communityId, user_id: userId, status: 'active' },
+      { status: 'left', left_at: new Date() }
+    );
+    await Community.findByIdAndUpdate(communityId, { $inc: { members_count: -1 } });
+
+    return { left: true, communityId };
+  },
+
+  async deleteGroup(userId: string, communityId: string) {
+    const { community } = await requireGroupAccess(userId, communityId);
+
+    if (!canDeleteCommunity(community, userId)) {
+      throw new HttpError(403, 'Only the creator can delete this group');
+    }
+
+    await Community.findByIdAndUpdate(communityId, { state: 'archived' });
+    await CommunityMembership.updateMany(
+      { community_id: communityId, status: 'active' },
+      { status: 'left', left_at: new Date() }
+    );
+    await CommunityInvite.updateMany(
+      { community_id: communityId, status: 'pending' },
+      { status: 'revoked', responded_at: new Date() }
+    );
+
+    return { deleted: true, communityId };
   }
 };

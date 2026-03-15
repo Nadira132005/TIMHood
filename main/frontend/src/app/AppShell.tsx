@@ -8,6 +8,7 @@ import { DiscoverGroupsScreen } from '../features/groups/screens/DiscoverGroupsS
 import { GroupDetailScreen } from '../features/groups/screens/GroupDetailScreen';
 import { GroupMembersScreen } from '../features/groups/screens/GroupMembersScreen';
 import { JoinedGroupsScreen } from '../features/groups/screens/JoinedGroupsScreen';
+import { FriendsScreen } from '../features/social/screens/FriendsScreen';
 import { RequestsScreen } from '../features/social/screens/RequestsScreen';
 import { WelcomeScreen } from '../features/welcome/screens/WelcomeScreen';
 import { initialSessionState } from '../shared/state/session';
@@ -21,6 +22,7 @@ type Route =
   | 'joined-groups'
   | 'group-detail'
   | 'group-members'
+  | 'friends'
   | 'requests';
 
 type GroupSourceRoute = 'groups' | 'joined-groups';
@@ -97,6 +99,14 @@ export function AppShell() {
             groupId={selectedGroupId}
             onBack={() => setRoute(selectedGroupSource)}
             onOpenMembers={() => setRoute('group-members')}
+            onGroupLeft={() => {
+              setSelectedGroupId(null);
+              setRoute('joined-groups');
+            }}
+            onGroupDeleted={() => {
+              setSelectedGroupId(null);
+              setRoute('joined-groups');
+            }}
           />
         ) : route === 'group-members' && selectedGroupId ? (
           <GroupMembersScreen
@@ -106,6 +116,8 @@ export function AppShell() {
           />
         ) : route === 'requests' ? (
           <RequestsScreen profile={session.profile} onBack={() => setRoute('dashboard')} />
+        ) : route === 'friends' ? (
+          <FriendsScreen profile={session.profile} onBack={() => setRoute('dashboard')} />
         ) : (
           <DashboardScreen
             profile={session.profile}
@@ -117,11 +129,8 @@ export function AppShell() {
             }}
             onOpenDiscoverGroups={() => setRoute('groups')}
             onOpenJoinedGroups={() => setRoute('joined-groups')}
+            onOpenFriends={() => setRoute('friends')}
             onOpenFriendRequests={() => setRoute('requests')}
-            onLogout={() => {
-              setRoute('dashboard');
-              setSession(initialSessionState);
-            }}
           />
         )
       ) : session.profile ? (

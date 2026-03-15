@@ -20,7 +20,7 @@ interface ICommunity {
   description?: string;
   created_by_user_id: string;
   neighborhood_name?: string;
-  group_kind: 'standard' | 'private';
+  group_kind: 'standard' | 'custom';
   group_key?: string;
   visibility: 'public' | 'private';
   state: (typeof CommunityStates)[number];
@@ -144,7 +144,7 @@ const communitySchema = new Schema<ICommunity>(
     description: { type: String },
     created_by_user_id: { type: String, required: true, index: true },
     neighborhood_name: { type: String, index: true },
-    group_kind: { type: String, enum: ['standard', 'private'], default: 'standard', required: true },
+    group_kind: { type: String, enum: ['standard', 'custom'], default: 'standard', required: true },
     group_key: { type: String, index: true },
     visibility: { type: String, enum: ['public', 'private'], default: 'public', required: true },
     state: { type: String, enum: CommunityStates, default: 'active', required: true },

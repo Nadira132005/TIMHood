@@ -36,6 +36,20 @@ type PendingFriendRequest = {
   photoBase64?: string;
 };
 
+type ContactItem = {
+  userId: string;
+  fullName: string;
+  bio?: string;
+  photoBase64?: string;
+  neighborhood?: string | null;
+  relationship: RelationshipStatus;
+};
+
+type ContactsResponse = {
+  friends: ContactItem[];
+  community: ContactItem[];
+};
+
 async function getRelationshipStatus(userId: string, targetUserId: string): Promise<RelationshipStatus> {
   if (userId === targetUserId) {
     return 'self';
@@ -82,7 +96,7 @@ export const socialService = {
 
     const senders = requests.length
       ? await User.find({ _id: { $in: requests.map((request) => request.from_user_id) } })
-          .select('full_name bio profile_photo_base64')
+          .select('full_name bio profile_photo_base64 show_photo_to_others')
           .lean()
       : [];
 
@@ -92,7 +106,7 @@ export const socialService = {
         fromUserId: request.from_user_id,
         fullName: sender?.full_name || request.from_user_id,
         bio: sender?.bio,
-        photoBase64: sender?.profile_photo_base64
+        photoBase64: sender?.show_photo_to_others ? sender?.profile_photo_base64 : undefined
       };
     });
   },
@@ -102,6 +116,82 @@ export const socialService = {
     return {
       targetUserId,
       status: await getRelationshipStatus(userId, targetUserId)
+    };
+  },
+
+  async getContacts(userId: string, query?: string): Promise<ContactsResponse> {
+    const user = await User.findById(userId).select('home_neighborhood').lean();
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    const relations = await FriendRequest.find({
+      $or: [{ from_user_id: userId }, { to_user_id: userId }]
+    }).lean();
+
+    const friendIds = relations
+      .filter((entry) => entry.status === 'accepted')
+      .map((entry) => (entry.from_user_id === userId ? entry.to_user_id : entry.from_user_id));
+
+    const normalizedQuery = (query || '').trim();
+    const regex = normalizedQuery ? new RegExp(normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+
+    const [friends, community] = await Promise.all([
+      friendIds.length
+        ? User.find({ _id: { $in: friendIds } })
+            .select('full_name bio profile_photo_base64 home_neighborhood show_photo_to_others')
+            .sort({ full_name: 1 })
+            .lean()
+        : Promise.resolve([]),
+      user.home_neighborhood
+        ? User.find({
+            _id: { $ne: userId },
+            home_neighborhood: user.home_neighborhood,
+            ...(regex ? { full_name: regex } : {})
+          })
+            .select('full_name bio profile_photo_base64 home_neighborhood show_photo_to_others')
+            .sort({ full_name: 1 })
+            .limit(25)
+            .lean()
+        : Promise.resolve([])
+    ]);
+
+    const friendIdSet = new Set(friendIds);
+    const requestSentSet = new Set(relations.filter((entry) => entry.status === 'pending' && entry.from_user_id === userId).map((entry) => entry.to_user_id));
+    const requestReceivedSet = new Set(
+      relations.filter((entry) => entry.status === 'pending' && entry.to_user_id === userId).map((entry) => entry.from_user_id)
+    );
+
+    const mapContact = (entry: {
+      _id: string;
+      full_name?: string;
+      bio?: string;
+      profile_photo_base64?: string;
+      home_neighborhood?: string;
+      show_photo_to_others?: boolean;
+    }): ContactItem => ({
+      userId: String(entry._id),
+      fullName: entry.full_name || String(entry._id),
+      bio: entry.bio,
+      photoBase64: entry.show_photo_to_others ? entry.profile_photo_base64 : undefined,
+      neighborhood: entry.home_neighborhood ?? null,
+      relationship: friendIdSet.has(String(entry._id))
+        ? 'friends'
+        : requestSentSet.has(String(entry._id))
+          ? 'request_sent'
+          : requestReceivedSet.has(String(entry._id))
+            ? 'request_received'
+            : 'none'
+    });
+
+    const friendItems = friends.map(mapContact);
+    const communityItems = community
+      .filter((entry) => !friendIdSet.has(String(entry._id)))
+      .map(mapContact);
+
+    return {
+      friends: regex ? friendItems.filter((entry) => regex.test(entry.fullName)) : friendItems,
+      community: communityItems
     };
   },
 
