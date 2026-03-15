@@ -1,59 +1,45 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
-import { apiPost, getApiBaseUrl, saveApiBaseUrl } from '../../../shared/api/client';
-import { FixedIdentityProfile } from '../../../shared/state/session';
-import { colors, spacing } from '../../../shared/theme/tokens';
-import { ScreenContainer } from '../../../shared/ui/ScreenContainer';
-import { SectionCard } from '../../../shared/ui/SectionCard';
-import { readIdentityCard } from '../lib/cei-reader';
+import { apiPost } from "../../../shared/api/client";
+import { AuthSession, FixedIdentityProfile } from "../../../shared/state/session";
+import { colors, spacing } from "../../../shared/theme/tokens";
+import { ScreenContainer } from "../../../shared/ui/ScreenContainer";
+import { SectionCard } from "../../../shared/ui/SectionCard";
+import { readIdentityCard } from "../lib/cei-reader";
 
 type Props = {
-  onLogin(profile: FixedIdentityProfile): void;
+  onLogin(auth: AuthSession, profile: FixedIdentityProfile): void;
 };
 
 type LoginResponse = {
   userId: string;
+  token: string;
+  expiresAt?: string | null;
   profile: FixedIdentityProfile;
 };
 
-const DEMO_CANS = new Set(['0000', '0001', '0002']);
-const RETRY_ERROR_MESSAGE = 'Something went wrong. Please retry and keep the ID card on the back of the phone.';
+const DEMO_CANS = new Set(["0000", "0001", "0002"]);
+const RETRY_ERROR_MESSAGE =
+  "Something went wrong. Please retry and keep the ID card on the back of the phone.";
 
 export function LoginScreen({ onLogin }: Props) {
-  const [can, setCan] = useState('');
-  const [backendUrl, setBackendUrl] = useState('');
+  const [can, setCan] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showConnectionSettings, setShowConnectionSettings] = useState(false);
-
-  React.useEffect(() => {
-    let mounted = true;
-
-    async function loadBackendUrl() {
-      try {
-        const url = await getApiBaseUrl();
-        if (mounted) {
-          setBackendUrl(url);
-        }
-      } catch {
-        if (mounted) {
-          setBackendUrl('http://127.0.0.1:4000/api');
-        }
-      }
-    }
-
-    void loadBackendUrl();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   async function handleReadCard() {
     const trimmedCan = can.trim();
     if (!/^\d{4,6}$/.test(trimmedCan)) {
-      setError('Enter the CAN from the Romanian ID card.');
+      setError("Enter the CAN from the Romanian ID card.");
       return;
     }
 
@@ -61,12 +47,26 @@ export function LoginScreen({ onLogin }: Props) {
     setError(null);
 
     try {
-      await saveApiBaseUrl(backendUrl);
-      const response = DEMO_CANS.has(trimmedCan)
-        ? await apiPost<LoginResponse>('/identity/demo-login', { can: trimmedCan })
-        : await apiPost<LoginResponse>('/identity/nfc-login', await readIdentityCard(trimmedCan));
-      onLogin(response.profile);
-    } catch {
+      if (DEMO_CANS.has(trimmedCan)) {
+        const response = await apiPost<LoginResponse>("/identity/demo-login", {
+          can: trimmedCan,
+        });
+        onLogin(
+          { token: response.token, expiresAt: response.expiresAt ?? null },
+          response.profile,
+        );
+      } else {
+        const response = await apiPost<LoginResponse>(
+          "/identity/nfc-login",
+          await readIdentityCard(trimmedCan),
+        );
+        onLogin(
+          { token: response.token, expiresAt: response.expiresAt ?? null },
+          response.profile,
+        );
+      }
+    } catch (error) {
+      console.error(error);
       setError(RETRY_ERROR_MESSAGE);
     } finally {
       setBusy(false);
@@ -83,7 +83,8 @@ export function LoginScreen({ onLogin }: Props) {
           <Text style={styles.welcomeLabel}>Welcome home</Text>
           <Text style={styles.title}>Get to know your neighbours.</Text>
           <Text style={styles.subtitle}>
-            Sign in now with your Romanian ID card and join the people, groups, and conversations around your neighborhood.
+            Sign in now with your Romanian ID card and join the people, groups,
+            and conversations around your neighborhood.
           </Text>
           <Text style={styles.microCopy}>
             Your ID details stay fixed as your verified local profile.
@@ -95,7 +96,7 @@ export function LoginScreen({ onLogin }: Props) {
         <Text style={styles.label}>Card Access Number (CAN)</Text>
         <TextInput
           value={can}
-          onChangeText={(value) => setCan(value.replace(/\D/g, '').slice(0, 6))}
+          onChangeText={(value) => setCan(value.replace(/\D/g, "").slice(0, 6))}
           keyboardType="number-pad"
           placeholder="Enter 6-digit CAN"
           placeholderTextColor={colors.textMuted}
@@ -103,10 +104,18 @@ export function LoginScreen({ onLogin }: Props) {
           editable={!busy}
         />
         <View style={styles.nfcHintCard}>
-          <Text style={styles.nfcHintTitle}>Keep the ID card on the back of the phone</Text>
-          <Text style={styles.nfcHintText}>Hold it steady during the full NFC read.</Text>
+          <Text style={styles.nfcHintTitle}>
+            Keep the ID card on the back of the phone
+          </Text>
+          <Text style={styles.nfcHintText}>
+            Hold it steady during the full NFC read.
+          </Text>
         </View>
-        <Pressable style={[styles.primaryButton, busy && styles.buttonDisabled]} onPress={handleReadCard} disabled={busy}>
+        <Pressable
+          style={[styles.primaryButton, busy && styles.buttonDisabled]}
+          onPress={handleReadCard}
+          disabled={busy}
+        >
           {busy ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="#ffffff" />
@@ -117,40 +126,17 @@ export function LoginScreen({ onLogin }: Props) {
           )}
         </Pressable>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        <Pressable
-          style={styles.connectionToggle}
-          onPress={() => setShowConnectionSettings((value) => !value)}
-          disabled={busy}
-        >
-          <Text style={styles.connectionToggleText}>
-            {showConnectionSettings ? 'Hide connection settings' : 'Connection settings'}
-          </Text>
-        </Pressable>
-        {showConnectionSettings ? (
-          <View style={styles.connectionPanel}>
-            <Text style={styles.label}>Backend URL</Text>
-            <TextInput
-              value={backendUrl}
-              onChangeText={setBackendUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="http://192.168.x.x:4000/api"
-              placeholderTextColor={colors.textMuted}
-              style={[styles.input, styles.backendInput, styles.backendInputCompact]}
-              editable={!busy}
-            />
-          </View>
-        ) : null}
       </SectionCard>
 
       <View style={styles.footnoteBlock}>
         <Text style={styles.footnoteText}>
-          Enter the CAN, tap sign in, and keep the ID card behind the phone until the read finishes.
+          Enter the CAN, tap sign in, and keep the ID card behind the phone
+          until the read finishes.
         </Text>
         <Text style={styles.footnoteText}>
-          {Platform.OS === 'android'
-            ? 'This login needs an Android build with the id_reader native module and real NFC hardware.'
-            : 'This screen is for Android NFC login. iOS and Expo Go cannot complete this flow yet.'}
+          {Platform.OS === "android"
+            ? "This login needs an Android build with the id_reader native module and real NFC hardware."
+            : "This screen is for Android NFC login. iOS and Expo Go cannot complete this flow yet."}
         </Text>
       </View>
     </ScreenContainer>
@@ -161,59 +147,59 @@ const styles = StyleSheet.create({
   hero: {
     marginBottom: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.md
+    paddingBottom: spacing.md,
   },
   heroPanel: {
     borderRadius: 26,
     padding: spacing.lg,
-    backgroundColor: '#F0F9F7',
+    backgroundColor: "#F0F9F7",
     borderWidth: 1,
-    borderColor: '#CDEBE4'
+    borderColor: "#CDEBE4",
   },
   brandPill: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#D7F5EE'
+    backgroundColor: "#D7F5EE",
   },
   brandPillText: {
     color: colors.primary,
     fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.8
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
   welcomeLabel: {
     marginTop: spacing.md,
-    color: '#0D5E57',
+    color: "#0D5E57",
     fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1.1
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
   },
   title: {
     marginTop: spacing.xs,
     color: colors.text,
     fontSize: 34,
     lineHeight: 40,
-    fontWeight: '800'
+    fontWeight: "800",
   },
   subtitle: {
     marginTop: spacing.sm,
     color: colors.textMuted,
     fontSize: 16,
-    lineHeight: 22
+    lineHeight: 22,
   },
   microCopy: {
     marginTop: spacing.sm,
     color: colors.primary,
     fontSize: 13,
-    fontWeight: '700'
+    fontWeight: "700",
   },
   label: {
     color: colors.text,
-    fontWeight: '700',
-    marginBottom: spacing.sm
+    fontWeight: "700",
+    marginBottom: spacing.sm,
   },
   input: {
     borderWidth: 1,
@@ -223,81 +209,81 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     color: colors.text,
     fontSize: 18,
-    backgroundColor: '#F9FBFC',
-    marginBottom: spacing.md
+    backgroundColor: "#F9FBFC",
+    marginBottom: spacing.md,
   },
   backendInput: {
-    fontSize: 16
+    fontSize: 16,
   },
   backendInputCompact: {
-    marginBottom: 0
+    marginBottom: 0,
   },
   nfcHintCard: {
     marginTop: spacing.xs,
     marginBottom: spacing.md,
     padding: spacing.md,
     borderRadius: 14,
-    backgroundColor: '#EEF8F6',
+    backgroundColor: "#EEF8F6",
     borderWidth: 1,
-    borderColor: '#B7E4DB'
+    borderColor: "#B7E4DB",
   },
   nfcHintTitle: {
     color: colors.primary,
-    fontWeight: '800',
-    fontSize: 15
+    fontWeight: "800",
+    fontSize: 15,
   },
   nfcHintText: {
     marginTop: spacing.xs,
     color: colors.textMuted,
-    lineHeight: 20
+    lineHeight: 20,
   },
   primaryButton: {
     backgroundColor: colors.primary,
     minHeight: 52,
     borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center'
+    alignItems: "center",
+    justifyContent: "center",
   },
   loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   buttonDisabled: {
-    opacity: 0.7
+    opacity: 0.7,
   },
   primaryButtonText: {
-    color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 16
+    color: "#ffffff",
+    fontWeight: "800",
+    fontSize: 16,
   },
   errorText: {
     marginTop: spacing.sm,
-    color: '#B42318',
-    lineHeight: 20
+    color: "#B42318",
+    lineHeight: 20,
   },
   footnoteBlock: {
     marginTop: spacing.sm,
     gap: spacing.sm,
-    paddingHorizontal: spacing.xs
+    paddingHorizontal: spacing.xs,
   },
   footnoteText: {
     color: colors.textMuted,
     fontSize: 12,
-    lineHeight: 17
+    lineHeight: 17,
   },
   connectionToggle: {
     marginTop: spacing.md,
-    alignSelf: 'flex-start'
+    alignSelf: "flex-start",
   },
   connectionToggleText: {
     color: colors.primary,
-    fontWeight: '700'
+    fontWeight: "700",
   },
   connectionPanel: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: colors.border
-  }
+    borderTopColor: colors.border,
+  },
 });

@@ -6,6 +6,8 @@
 2. Install dependencies from repo root: `npm install`.
 3. Start backend: `npm run dev:backend`.
 
+Authenticated requests can use `Authorization: Bearer <token>` with the token returned by `/api/identity/nfc-login` or `/api/identity/demo-login`.
+
 ## Current structure
 
 - `src/config`: environment and DB bootstrap

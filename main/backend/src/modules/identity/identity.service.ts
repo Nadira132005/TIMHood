@@ -1,11 +1,12 @@
-import crypto from 'crypto';
+import crypto from "crypto";
 
-import { HttpError } from '../../shared/utils/http-error';
-import { communitiesService } from '../communities/communities.service';
-import { neighborhoodsService } from '../neighborhoods/neighborhoods.service';
-import { FriendRequest } from '../social/social.model';
-import { User, UserLocation } from './identity.model';
-import { resolveNeighborhood } from './neighborhood-resolver';
+import { HttpError } from "../../shared/utils/http-error";
+import { createAuthToken } from "../../shared/utils/auth-token";
+import { communitiesService } from "../communities/communities.service";
+import { neighborhoodsService } from "../neighborhoods/neighborhoods.service";
+import { FriendRequest } from "../social/social.model";
+import { User, UserLocation } from "./identity.model";
+import { resolveNeighborhood } from "./neighborhood-resolver";
 
 type NfcLoginPayload = {
   documentNumber: string;
@@ -20,26 +21,26 @@ type NfcLoginPayload = {
 
 type ProofStatusResponse = {
   _id: string;
-  verification_state: 'unverified' | 'verified';
+  verification_state: "unverified" | "verified";
   verified_at?: Date;
   verification_locked_at?: Date;
 };
 
 type LocationPayload = {
   home_location_point: {
-    type: 'Point';
+    type: "Point";
     coordinates: [number, number];
   };
   home_location_label?: string;
   home_place_id?: string;
-  home_input_source: 'pin_drop' | 'maps_place_input';
+  home_input_source: "pin_drop" | "maps_place_input";
   work_location_point?: {
-    type: 'Point';
+    type: "Point";
     coordinates: [number, number];
   };
   work_location_label?: string;
   work_place_id?: string;
-  work_input_source?: 'pin_drop' | 'maps_place_input';
+  work_input_source?: "pin_drop" | "maps_place_input";
 };
 
 type FixedProfileResponse = {
@@ -73,6 +74,9 @@ type PublicProfileResponse = {
 
 type NfcLoginResponse = {
   userId: string;
+  token: string;
+  tokenType: "Bearer";
+  expiresAt: string;
   profile: FixedProfileResponse;
 };
 
@@ -84,7 +88,7 @@ type AddressOnboardingPayload = {
   addressLabel: string;
   neighborhood?: string;
   location?: {
-    type: 'Point';
+    type: "Point";
     coordinates: [number, number];
   };
 };
@@ -93,19 +97,22 @@ type AddressOnboardingResponse = {
   userId: string;
   addressLabel: string;
   neighborhood: string | null;
-  neighborhoodResolutionMode: 'manual_selection' | 'coordinate_resolution';
+  neighborhoodResolutionMode: "manual_selection" | "coordinate_resolution";
 };
 
 function hashDocumentNumber(documentNumber: string): string {
-  return crypto.createHash('sha256').update(documentNumber.trim()).digest('hex');
+  return crypto
+    .createHash("sha256")
+    .update(documentNumber.trim())
+    .digest("hex");
 }
 
 function encodeDocumentNumber(documentNumber: string): string {
-  return Buffer.from(documentNumber.trim(), 'utf8').toString('base64');
+  return Buffer.from(documentNumber.trim(), "utf8").toString("base64");
 }
 
 function normalizeName(value: string): string {
-  return value.trim().replace(/\s+/g, ' ');
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function parseMrzDate(value: string, field: string): Date {
@@ -120,7 +127,7 @@ function parseMrzDate(value: string, field: string): Date {
   const currentTwoDigitYear = new Date().getUTCFullYear() % 100;
   let fullYear = 2000 + yy;
 
-  if (field === 'dateOfBirth' && yy > currentTwoDigitYear) {
+  if (field === "dateOfBirth" && yy > currentTwoDigitYear) {
     fullYear = 1900 + yy;
   }
 
@@ -166,7 +173,7 @@ function buildFixedProfile(user: {
     !user.date_of_birth ||
     !user.date_of_expiry
   ) {
-    throw new HttpError(500, 'Stored identity profile is incomplete');
+    throw new HttpError(500, "Stored identity profile is incomplete");
   }
 
   return {
@@ -185,30 +192,39 @@ function buildFixedProfile(user: {
     showAgeToOthers: user.show_age_to_others ?? true,
     documentIsValid: user.date_of_expiry.getTime() >= Date.now(),
     homeAddressLabel: user.home_address_label,
-    homeNeighborhood: user.home_neighborhood ?? null
+    homeNeighborhood: user.home_neighborhood ?? null,
   };
 }
 
-async function getRelationshipStatus(userId: string, targetUserId: string): Promise<'self' | 'friends' | 'request_sent' | 'request_received' | 'none'> {
+async function getRelationshipStatus(
+  userId: string,
+  targetUserId: string,
+): Promise<"self" | "friends" | "request_sent" | "request_received" | "none"> {
   if (userId === targetUserId) {
-    return 'self';
+    return "self";
   }
 
   const [sent, received] = await Promise.all([
-    FriendRequest.findOne({ from_user_id: userId, to_user_id: targetUserId }).lean(),
-    FriendRequest.findOne({ from_user_id: targetUserId, to_user_id: userId }).lean()
+    FriendRequest.findOne({
+      from_user_id: userId,
+      to_user_id: targetUserId,
+    }).lean(),
+    FriendRequest.findOne({
+      from_user_id: targetUserId,
+      to_user_id: userId,
+    }).lean(),
   ]);
 
-  if (sent?.status === 'accepted' || received?.status === 'accepted') {
-    return 'friends';
+  if (sent?.status === "accepted" || received?.status === "accepted") {
+    return "friends";
   }
-  if (sent?.status === 'pending') {
-    return 'request_sent';
+  if (sent?.status === "pending") {
+    return "request_sent";
   }
-  if (received?.status === 'pending') {
-    return 'request_received';
+  if (received?.status === "pending") {
+    return "request_received";
   }
-  return 'none';
+  return "none";
 }
 
 function getAge(dateOfBirth?: Date): number | undefined {
@@ -228,8 +244,13 @@ function getAge(dateOfBirth?: Date): number | undefined {
   return age;
 }
 
-function buildDemoAvatar(firstName: string, lastName: string, background: string): string {
-  const initials = `${firstName.slice(0, 1)}${lastName.slice(0, 1)}`.toUpperCase();
+function buildDemoAvatar(
+  firstName: string,
+  lastName: string,
+  background: string,
+): string {
+  const initials =
+    `${firstName.slice(0, 1)}${lastName.slice(0, 1)}`.toUpperCase();
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
       <defs>
@@ -263,45 +284,45 @@ const DEMO_USERS: Record<
     photoDataUri: string;
   }
 > = {
-  '0000': {
-    documentNumber: 'SOARELUI-DEMO-0000',
-    firstName: 'Mara',
-    lastName: 'Popescu',
-    nationality: 'ROU',
-    issuingState: 'ROU',
-    dateOfBirth: '980412',
-    dateOfExpiry: '351231',
-    bio: 'Coffee walks, school pickup coordination, and neighborhood updates.',
-    homeAddressLabel: 'Aleea FC Ripensia 12',
-    homeNeighborhood: 'Soarelui',
-    photoDataUri: buildDemoAvatar('Mara', 'Popescu', '#A855F7')
+  "0000": {
+    documentNumber: "SOARELUI-DEMO-0000",
+    firstName: "Mara",
+    lastName: "Popescu",
+    nationality: "ROU",
+    issuingState: "ROU",
+    dateOfBirth: "980412",
+    dateOfExpiry: "351231",
+    bio: "Coffee walks, school pickup coordination, and neighborhood updates.",
+    homeAddressLabel: "Aleea FC Ripensia 12",
+    homeNeighborhood: "Soarelui",
+    photoDataUri: buildDemoAvatar("Mara", "Popescu", "#A855F7"),
   },
-  '0001': {
-    documentNumber: 'SOARELUI-DEMO-0001',
-    firstName: 'Andrei',
-    lastName: 'Ionescu',
-    nationality: 'ROU',
-    issuingState: 'ROU',
-    dateOfBirth: '910225',
-    dateOfExpiry: '351231',
-    bio: 'Plays football on weekends and helps with small repairs.',
-    homeAddressLabel: 'Strada Sirius 8',
-    homeNeighborhood: 'Soarelui',
-    photoDataUri: buildDemoAvatar('Andrei', 'Ionescu', '#0F766E')
+  "0001": {
+    documentNumber: "SOARELUI-DEMO-0001",
+    firstName: "Andrei",
+    lastName: "Ionescu",
+    nationality: "ROU",
+    issuingState: "ROU",
+    dateOfBirth: "910225",
+    dateOfExpiry: "351231",
+    bio: "Plays football on weekends and helps with small repairs.",
+    homeAddressLabel: "Strada Sirius 8",
+    homeNeighborhood: "Soarelui",
+    photoDataUri: buildDemoAvatar("Andrei", "Ionescu", "#0F766E"),
   },
-  '0002': {
-    documentNumber: 'SOARELUI-DEMO-0002',
-    firstName: 'Teodora',
-    lastName: 'Marin',
-    nationality: 'ROU',
-    issuingState: 'ROU',
-    dateOfBirth: '960903',
-    dateOfExpiry: '351231',
-    bio: 'Pet-friendly neighbor, marketplace regular, and event organizer.',
-    homeAddressLabel: 'Bulevardul Sudului 18',
-    homeNeighborhood: 'Soarelui',
-    photoDataUri: buildDemoAvatar('Teodora', 'Marin', '#EA580C')
-  }
+  "0002": {
+    documentNumber: "SOARELUI-DEMO-0002",
+    firstName: "Teodora",
+    lastName: "Marin",
+    nationality: "ROU",
+    issuingState: "ROU",
+    dateOfBirth: "960903",
+    dateOfExpiry: "351231",
+    bio: "Pet-friendly neighbor, marketplace regular, and event organizer.",
+    homeAddressLabel: "Bulevardul Sudului 18",
+    homeNeighborhood: "Soarelui",
+    photoDataUri: buildDemoAvatar("Teodora", "Marin", "#EA580C"),
+  },
 };
 
 export const identityService = {
@@ -310,22 +331,25 @@ export const identityService = {
     const demoUser = DEMO_USERS[can];
 
     if (!demoUser) {
-      throw new HttpError(404, 'Unknown demo CAN');
+      throw new HttpError(404, "Unknown demo CAN");
     }
 
-    const dateOfBirth = parseMrzDate(demoUser.dateOfBirth, 'dateOfBirth');
-    const dateOfExpiry = parseMrzDate(demoUser.dateOfExpiry, 'dateOfExpiry');
+    const dateOfBirth = parseMrzDate(demoUser.dateOfBirth, "dateOfBirth");
+    const dateOfExpiry = parseMrzDate(demoUser.dateOfExpiry, "dateOfExpiry");
     const now = new Date();
-    const canonicalNeighborhood = await neighborhoodsService.getCanonicalNeighborhoodName(
-      demoUser.homeNeighborhood
-    );
+    const canonicalNeighborhood =
+      await neighborhoodsService.getCanonicalNeighborhoodName(
+        demoUser.homeNeighborhood,
+      );
 
     const savedUser = await User.findOneAndUpdate(
       { _id: demoUser.documentNumber },
       {
         $set: {
           document_number: demoUser.documentNumber,
-          document_number_encrypted: encodeDocumentNumber(demoUser.documentNumber),
+          document_number_encrypted: encodeDocumentNumber(
+            demoUser.documentNumber,
+          ),
           document_number_hash: hashDocumentNumber(demoUser.documentNumber),
           first_name: demoUser.firstName,
           last_name: demoUser.lastName,
@@ -340,36 +364,41 @@ export const identityService = {
           show_age_to_others: true,
           home_address_label: demoUser.homeAddressLabel,
           home_neighborhood: canonicalNeighborhood,
-          verification_state: 'verified',
+          verification_state: "verified",
           document_checked_at: now,
-          last_seen_at: now
+          last_seen_at: now,
         },
         $setOnInsert: {
           _id: demoUser.documentNumber,
-          account_status: 'active',
+          account_status: "active",
           verified_at: now,
-          verification_locked_at: now
-        }
+          verification_locked_at: now,
+        },
       },
       {
         upsert: true,
         new: true,
-        setDefaultsOnInsert: true
-      }
+        setDefaultsOnInsert: true,
+      },
     );
 
     if (!savedUser) {
-      throw new HttpError(500, 'Failed to save demo user');
+      throw new HttpError(500, "Failed to save demo user");
     }
 
     await communitiesService.ensureNeighborhoodGroupsForUser(
       demoUser.documentNumber,
-      canonicalNeighborhood
+      canonicalNeighborhood,
     );
+
+    const authToken = createAuthToken(demoUser.documentNumber);
 
     return {
       userId: demoUser.documentNumber,
-      profile: buildFixedProfile(savedUser)
+      token: authToken.token,
+      tokenType: "Bearer",
+      expiresAt: authToken.expiresAt,
+      profile: buildFixedProfile(savedUser),
     };
   },
 
@@ -378,20 +407,24 @@ export const identityService = {
     const firstName = normalizeName(payload.firstName);
     const lastName = normalizeName(payload.lastName);
     const nationality = payload.nationality.trim().toUpperCase();
-    const issuingState = payload.issuingState?.trim().toUpperCase() || undefined;
+    const issuingState =
+      payload.issuingState?.trim().toUpperCase() || undefined;
 
     if (!documentNumber) {
-      throw new HttpError(400, 'documentNumber is required');
+      throw new HttpError(400, "documentNumber is required");
     }
 
     if (!firstName || !lastName || !nationality) {
-      throw new HttpError(400, 'firstName, lastName, and nationality are required');
+      throw new HttpError(
+        400,
+        "firstName, lastName, and nationality are required",
+      );
     }
 
-    const dateOfBirth = parseMrzDate(payload.dateOfBirth, 'dateOfBirth');
-    const dateOfExpiry = parseMrzDate(payload.dateOfExpiry, 'dateOfExpiry');
+    const dateOfBirth = parseMrzDate(payload.dateOfBirth, "dateOfBirth");
+    const dateOfExpiry = parseMrzDate(payload.dateOfExpiry, "dateOfExpiry");
     if (dateOfExpiry.getTime() < Date.now()) {
-      throw new HttpError(400, 'Document is expired');
+      throw new HttpError(400, "Document is expired");
     }
 
     const now = new Date();
@@ -400,15 +433,15 @@ export const identityService = {
     const documentNumberEncoded = encodeDocumentNumber(documentNumber);
     const duplicateWithDifferentId = await User.findOne({
       document_number: documentNumber,
-      _id: { $ne: documentNumber }
+      _id: { $ne: documentNumber },
     })
-      .select('_id')
+      .select("_id")
       .lean();
 
     if (duplicateWithDifferentId) {
       throw new HttpError(
         409,
-        `Duplicate user exists for document_number ${documentNumber}. Clean old rows before retrying.`
+        `Duplicate user exists for document_number ${documentNumber}. Clean old rows before retrying.`,
       );
     }
 
@@ -423,7 +456,10 @@ export const identityService = {
         toIsoDate(existingUser.date_of_expiry) === toIsoDate(dateOfExpiry);
 
       if (!fixedFieldsMatch) {
-        throw new HttpError(409, 'Stored document identity does not match the NFC read');
+        throw new HttpError(
+          409,
+          "Stored document identity does not match the NFC read",
+        );
       }
     }
 
@@ -444,38 +480,47 @@ export const identityService = {
           profile_photo_base64: payload.photoBase64,
           show_photo_to_others: true,
           show_age_to_others: true,
-          verification_state: 'verified',
+          verification_state: "verified",
           document_checked_at: now,
-          last_seen_at: now
+          last_seen_at: now,
         },
         $setOnInsert: {
           _id: documentNumber,
-          account_status: 'active',
+          account_status: "active",
           verified_at: now,
-          verification_locked_at: now
-        }
+          verification_locked_at: now,
+        },
       },
       {
         upsert: true,
         new: true,
-        setDefaultsOnInsert: true
-      }
+        setDefaultsOnInsert: true,
+      },
     );
 
     if (!savedUser) {
-      throw new HttpError(500, 'Failed to save NFC login user');
+      throw new HttpError(500, "Failed to save NFC login user");
     }
+
+    const authToken = createAuthToken(documentNumber);
 
     return {
       userId: documentNumber,
-      profile: buildFixedProfile(savedUser)
+      token: authToken.token,
+      tokenType: "Bearer",
+      expiresAt: authToken.expiresAt,
+      profile: buildFixedProfile(savedUser),
     };
   },
 
-  async getFixedProfile(documentNumber: string): Promise<FixedProfileResponse | null> {
-    const user = await User.findOne({ document_number: documentNumber.trim().toUpperCase() })
+  async getFixedProfile(
+    documentNumber: string,
+  ): Promise<FixedProfileResponse | null> {
+    const user = await User.findOne({
+      document_number: documentNumber.trim().toUpperCase(),
+    })
       .select(
-        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64 bio show_photo_to_others show_age_to_others home_address_label home_neighborhood'
+        "document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64 bio show_photo_to_others show_age_to_others home_address_label home_neighborhood",
       )
       .lean();
 
@@ -486,93 +531,48 @@ export const identityService = {
     return buildFixedProfile(user);
   },
 
-  async getPublicProfile(userId: string, viewerUserId?: string): Promise<PublicProfileResponse | null> {
+  async getPublicProfile(
+    userId: string,
+    viewerUserId?: string,
+  ): Promise<PublicProfileResponse | null> {
     const user = await User.findById(userId)
-      .select('full_name profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at show_photo_to_others show_age_to_others')
+      .select(
+        "full_name profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at show_photo_to_others show_age_to_others",
+      )
       .lean();
 
     if (!user) {
       return null;
     }
 
-    const relationship = viewerUserId ? await getRelationshipStatus(viewerUserId, userId) : 'none';
-    const canSeePrivateFields = relationship === 'self';
+    const relationship = viewerUserId
+      ? await getRelationshipStatus(viewerUserId, userId)
+      : "none";
+    const canSeePrivateFields = relationship === "self";
 
     return {
       userId,
       fullName: user.full_name || userId,
-      photoBase64: canSeePrivateFields || user.show_photo_to_others ? user.profile_photo_base64 : undefined,
+      photoBase64:
+        canSeePrivateFields || user.show_photo_to_others
+          ? user.profile_photo_base64
+          : undefined,
       bio: user.bio,
-      age: canSeePrivateFields || user.show_age_to_others ? getAge(user.date_of_birth) : undefined,
+      age:
+        canSeePrivateFields || user.show_age_to_others
+          ? getAge(user.date_of_birth)
+          : undefined,
       neighborhood: user.home_neighborhood ?? null,
-      lastSeenAt: user.last_seen_at?.toISOString()
+      lastSeenAt: user.last_seen_at?.toISOString(),
     };
   },
-
-  async getProofStatus(userId: string): Promise<ProofStatusResponse | null> {
+  async upsertLocations(userId: string, payload: LocationPayload) {
     const user = await User.findById(userId)
-      .select('_id verification_state verified_at verification_locked_at')
+      .select("_id verification_state")
       .lean();
 
     if (!user) {
-      return null;
-    }
-
-    return {
-      _id: String(user._id),
-      verification_state: user.verification_state,
-      verified_at: user.verified_at,
-      verification_locked_at: user.verification_locked_at
-    };
-  },
-
-  async submitProofOfWork(userId: string, documentNumber: string): Promise<ProofStatusResponse> {
-    const trimmed = documentNumber.trim();
-    if (!trimmed) {
-      throw new HttpError(400, 'document_number cannot be empty');
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new HttpError(404, 'User not found');
-    }
-
-    if (user.verification_state === 'verified') {
-      throw new HttpError(409, 'Document number proof already submitted and locked');
-    }
-
-    const docHash = hashDocumentNumber(trimmed);
-    const existingOwner = await User.findOne({ document_number_hash: docHash }).select('_id').lean();
-
-    if (existingOwner) {
-      throw new HttpError(409, 'Document number already used');
-    }
-
-    const now = new Date();
-    user.document_number_encrypted = encodeDocumentNumber(trimmed);
-    user.document_number_hash = docHash;
-    user.verification_state = 'verified';
-    user.verified_at = now;
-    user.verification_locked_at = now;
-    await user.save();
-
-    return {
-      _id: String(user._id),
-      verification_state: user.verification_state,
-      verified_at: user.verified_at,
-      verification_locked_at: user.verification_locked_at
-    };
-  },
-
-  async upsertLocations(userId: string, payload: LocationPayload) {
-    const user = await User.findById(userId).select('_id verification_state').lean();
-
-    if (!user) {
-      throw new HttpError(404, 'User not found');
-    }
-
-    if (user.verification_state !== 'verified') {
-      throw new HttpError(403, 'Document number proof required before saving locations');
+      throw new HttpError(404, "User not found");
     }
 
     return UserLocation.findOneAndUpdate(
@@ -587,40 +587,46 @@ export const identityService = {
         work_location_label: payload.work_location_label,
         work_place_id: payload.work_place_id,
         work_input_source: payload.work_input_source,
-        is_active: true
+        is_active: true,
       },
       {
         upsert: true,
         new: true,
-        setDefaultsOnInsert: true
-      }
+        setDefaultsOnInsert: true,
+      },
     ).lean();
   },
 
-  async saveHomeAddress(userId: string, payload: AddressOnboardingPayload): Promise<AddressOnboardingResponse> {
+  async saveHomeAddress(
+    userId: string,
+    payload: AddressOnboardingPayload,
+  ): Promise<AddressOnboardingResponse> {
     const addressLabel = payload.addressLabel.trim();
-    const neighborhood = payload.neighborhood?.trim() || '';
+    const neighborhood = payload.neighborhood?.trim() || "";
     if (!addressLabel) {
-      throw new HttpError(400, 'addressLabel is required');
+      throw new HttpError(400, "addressLabel is required");
     }
 
     let resolvedNeighborhoodFromPoint: string | null = null;
 
     const user = await User.findById(userId);
     if (!user) {
-      throw new HttpError(404, 'User not found');
+      throw new HttpError(404, "User not found");
     }
 
     if (payload.location) {
       if (
-        payload.location.type !== 'Point' ||
+        payload.location.type !== "Point" ||
         !Array.isArray(payload.location.coordinates) ||
         payload.location.coordinates.length !== 2
       ) {
-        throw new HttpError(400, 'location must be a GeoJSON Point when provided');
+        throw new HttpError(
+          400,
+          "location must be a GeoJSON Point when provided",
+        );
       }
 
-      const resolverResult = resolveNeighborhood(payload.location);
+      const resolverResult = await resolveNeighborhood(payload.location);
       resolvedNeighborhoodFromPoint = resolverResult.neighborhood;
       await UserLocation.findOneAndUpdate(
         { user_id: user._id },
@@ -628,34 +634,42 @@ export const identityService = {
           user_id: user._id,
           home_location_point: payload.location,
           home_location_label: addressLabel,
-          home_input_source: 'maps_place_input',
-          is_active: true
+          home_input_source: "maps_place_input",
+          is_active: true,
         },
         {
           upsert: true,
           new: true,
-          setDefaultsOnInsert: true
-        }
+          setDefaultsOnInsert: true,
+        },
       ).lean();
     }
 
     const effectiveNeighborhood = neighborhood || resolvedNeighborhoodFromPoint;
     if (!effectiveNeighborhood) {
-      throw new HttpError(400, 'neighborhood is required');
+      throw new HttpError(400, "neighborhood is required");
     }
 
-    const canonicalNeighborhood = await neighborhoodsService.getCanonicalNeighborhoodName(effectiveNeighborhood);
+    const canonicalNeighborhood =
+      await neighborhoodsService.getCanonicalNeighborhoodName(
+        effectiveNeighborhood,
+      );
 
     user.home_address_label = addressLabel;
     user.home_neighborhood = canonicalNeighborhood;
     await user.save();
-    await communitiesService.ensureNeighborhoodGroupsForUser(userId, canonicalNeighborhood);
+    await communitiesService.ensureNeighborhoodGroupsForUser(
+      userId,
+      canonicalNeighborhood,
+    );
 
     return {
       userId: user._id,
       addressLabel,
       neighborhood: user.home_neighborhood ?? canonicalNeighborhood,
-      neighborhoodResolutionMode: neighborhood ? 'manual_selection' : 'coordinate_resolution'
+      neighborhoodResolutionMode: neighborhood
+        ? "manual_selection"
+        : "coordinate_resolution",
     };
   },
 
@@ -664,7 +678,7 @@ export const identityService = {
     const user = await User.findById(userId);
 
     if (!user) {
-      throw new HttpError(404, 'User not found');
+      throw new HttpError(404, "User not found");
     }
 
     user.bio = normalizedBio.slice(0, 280);
@@ -675,12 +689,12 @@ export const identityService = {
 
   async savePrivacySettings(
     userId: string,
-    payload: { showPhotoToOthers: boolean; showAgeToOthers: boolean }
+    payload: { showPhotoToOthers: boolean; showAgeToOthers: boolean },
   ): Promise<FixedProfileResponse> {
     const user = await User.findById(userId);
 
     if (!user) {
-      throw new HttpError(404, 'User not found');
+      throw new HttpError(404, "User not found");
     }
 
     user.show_photo_to_others = payload.showPhotoToOthers;
@@ -688,5 +702,5 @@ export const identityService = {
     await user.save();
 
     return buildFixedProfile(user);
-  }
+  },
 };

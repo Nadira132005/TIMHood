@@ -6,6 +6,7 @@ declare global {
       auth?: {
         userId: string | null;
         isAuthenticated: boolean;
+        tokenExpiresAt?: string;
       };
     }
   }

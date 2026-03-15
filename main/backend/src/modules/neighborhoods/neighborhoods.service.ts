@@ -1,5 +1,6 @@
 import { User } from "../identity/identity.model";
 import { HttpError } from "../../shared/utils/http-error";
+import { findNeighborhoodByCoordinates } from "./neighborhood-geo";
 import { Neighborhood, NeighborhoodMessage } from "./neighborhoods.model";
 
 type LngLat = [number, number];
@@ -150,16 +151,7 @@ export const neighborhoodsService = {
       };
     }
 
-    const matched = await Neighborhood.findOne({
-      geometry: {
-        $geoIntersects: {
-          $geometry: {
-            type: "Point",
-            coordinates,
-          },
-        },
-      },
-    }).lean();
+    const matched = await findNeighborhoodByCoordinates(coordinates);
 
     return {
       addressLabel: trimmedAddress,

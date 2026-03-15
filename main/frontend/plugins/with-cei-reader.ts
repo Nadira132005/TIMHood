@@ -40,22 +40,32 @@ function ensureImport(contents: string, importLine: string) {
 
   return `${importLine}\n${contents}`;
 }
-
 function ensureKotlinPackageRegistration(contents: string) {
-  if (contents.includes(`${PACKAGE_CLASS}()`)) {
+  if (
+    contents.includes(`add(${PACKAGE_CLASS}())`) ||
+    contents.includes(`${PACKAGE_CLASS}()`)
+  ) {
     return contents;
   }
 
-  // Kotlin RN template usually looks like:
-  // override fun getPackages(): List<ReactPackage> =
-  //   PackageList(this).packages.apply {
-  //     ...
-  //   }
-  contents = contents.replace(
-    /PackageList\(this\)\.packages\.apply\s*\{/,
-    `PackageList(this).packages.apply {
+  // Case 1: already using apply {}
+  if (/PackageList\(this\)\.packages\.apply\s*\{/.test(contents)) {
+    return contents.replace(
+      /PackageList\(this\)\.packages\.apply\s*\{/,
+      `PackageList(this).packages.apply {
         add(${PACKAGE_CLASS}())`,
-  );
+    );
+  }
+
+  // Case 2: simple "return PackageList(this).packages"
+  if (/return\s+PackageList\(this\)\.packages/.test(contents)) {
+    return contents.replace(
+      /return\s+PackageList\(this\)\.packages/,
+      `return PackageList(this).packages.apply {
+          add(${PACKAGE_CLASS}())
+        }`,
+    );
+  }
 
   return contents;
 }

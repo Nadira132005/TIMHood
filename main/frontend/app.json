@@ -18,6 +18,11 @@
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAin5fjuhP1VJEIOIlx61UiM8x-kW8M2VQ"
+        }
+      },
       "package": "com.timhood.app"
     },
     "web": {

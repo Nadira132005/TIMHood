@@ -1,12 +1,12 @@
 import { Router } from 'express';
 
-import { requireAuth } from '../../shared/middleware/require-auth';
+import { protectedRoute } from '../../shared/middleware/protected-route';
 import { asyncHandler } from '../../shared/utils/async-handler';
 import { socialController } from './social.controller';
 
 export const socialRouter = Router();
 
-socialRouter.use(requireAuth);
+socialRouter.use(...protectedRoute);
 socialRouter.get('/friend-requests/pending', asyncHandler(socialController.getPendingFriendRequests));
 socialRouter.get('/contacts', asyncHandler(socialController.getContacts));
 socialRouter.get('/relationships/:userId', asyncHandler(socialController.getRelationship));

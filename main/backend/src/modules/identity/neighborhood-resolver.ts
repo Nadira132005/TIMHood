@@ -1,4 +1,4 @@
-import { resolveNeighborhoodSeedByPoint } from "../neighborhoods/utils";
+import { findNeighborhoodByCoordinates } from "../neighborhoods/neighborhood-geo";
 
 type GeoPoint = {
   type: "Point";
@@ -7,13 +7,14 @@ type GeoPoint = {
 
 type NeighborhoodResolution = {
   neighborhood: string | null;
-  resolutionMode: "polygon_match" | "outside_dataset";
 };
 
-export function resolveNeighborhood(point: GeoPoint): NeighborhoodResolution {
-  const matched = resolveNeighborhoodSeedByPoint(point.coordinates);
+export async function resolveNeighborhood(
+  point: GeoPoint,
+): Promise<NeighborhoodResolution> {
+  const matched = await findNeighborhoodByCoordinates(point.coordinates);
+
   return {
     neighborhood: matched?.name || null,
-    resolutionMode: matched ? "polygon_match" : "outside_dataset",
   };
 }

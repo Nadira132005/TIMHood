@@ -6,7 +6,6 @@ import path from 'path';
 
 import { env } from './config/env';
 import { apiRouter } from './modules';
-import { authContext } from './shared/middleware/auth-context';
 import { errorHandler } from './shared/middleware/error-handler';
 import { notFound } from './shared/middleware/not-found';
 
@@ -17,7 +16,6 @@ export function buildApp() {
   app.use(cors({ origin: env.frontendOrigin }));
   app.use(express.json({ limit: '5mb' }));
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
-  app.use(authContext);
 
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });

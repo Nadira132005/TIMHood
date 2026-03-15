@@ -29,6 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "./plugins/with-cei-reader.ts",
     "./plugins/with-disable-jetifier.ts",
+    "expo-secure-store",
     [
       "expo-build-properties",
       {
