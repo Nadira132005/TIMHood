@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 
 import { AddressScreen } from "../features/address/screens/AddressScreen";
 import { LoginScreen } from "../features/auth/screens/LoginScreen";
+import { DirectChatScreen } from "../features/chat/screens/DirectChatScreen";
 import { DashboardScreen } from "../features/dashboard/screens/DashboardScreen";
 import { DiscoverGroupsScreen } from "../features/groups/screens/DiscoverGroupsScreen";
 import { GroupDetailScreen } from "../features/groups/screens/GroupDetailScreen";
@@ -11,17 +12,7 @@ import { JoinedGroupsScreen } from "../features/groups/screens/JoinedGroupsScree
 import { FriendsScreen } from "../features/social/screens/FriendsScreen";
 import { RequestsScreen } from "../features/social/screens/RequestsScreen";
 import { WelcomeScreen } from "../features/welcome/screens/WelcomeScreen";
-import { setApiAuthToken } from "../shared/api/client";
-import {
-  clearPersistedSession,
-  loadPersistedSession,
-  persistSession,
-} from "../shared/state/auth-storage";
-import {
-  AuthSession,
-  FixedIdentityProfile,
-  initialSessionState,
-} from "../shared/state/session";
+import { initialSessionState } from "../shared/state/session";
 import { colors } from "../shared/theme/tokens";
 
 type Route =
@@ -33,7 +24,8 @@ type Route =
   | "group-detail"
   | "group-members"
   | "friends"
-  | "requests";
+  | "requests"
+  | "direct-chat";
 
 type GroupSourceRoute = "groups" | "joined-groups";
 
@@ -44,6 +36,12 @@ export function AppShell() {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedGroupSource, setSelectedGroupSource] =
     useState<GroupSourceRoute>("joined-groups");
+  const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(
+    null,
+  );
+  const [selectedChatUserName, setSelectedChatUserName] = useState<
+    string | null
+  >(null);
   const needsAddress = session.profile && !session.profile.homeAddressLabel;
 
   useEffect(() => {
@@ -173,16 +171,35 @@ export function AppShell() {
             profile={session.profile}
             groupId={selectedGroupId}
             onBack={() => setRoute("group-detail")}
+            onOpenChat={(userId, fullName) => {
+              setSelectedChatUserId(userId);
+              setSelectedChatUserName(fullName);
+              setRoute("direct-chat");
+            }}
           />
         ) : route === "requests" ? (
           <RequestsScreen
             profile={session.profile}
             onBack={() => setRoute("dashboard")}
           />
+        ) : route === "direct-chat" &&
+          selectedChatUserId &&
+          selectedChatUserName ? (
+          <DirectChatScreen
+            profile={session.profile}
+            targetUserId={selectedChatUserId}
+            targetUserName={selectedChatUserName}
+            onBack={() => setRoute("friends")}
+          />
         ) : route === "friends" ? (
           <FriendsScreen
             profile={session.profile}
             onBack={() => setRoute("dashboard")}
+            onOpenChat={(userId, fullName) => {
+              setSelectedChatUserId(userId);
+              setSelectedChatUserName(fullName);
+              setRoute("direct-chat");
+            }}
           />
         ) : (
           <DashboardScreen

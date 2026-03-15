@@ -1,4 +1,5 @@
 import { User } from '../identity/identity.model';
+import { isGeneratedAvatarDataUri, resolveVisibleProfilePhoto } from '../../shared/utils/avatar';
 import { HttpError } from '../../shared/utils/http-error';
 import { DirectMessage, FriendRequest } from './social.model';
 
@@ -96,7 +97,7 @@ export const socialService = {
 
     const senders = requests.length
       ? await User.find({ _id: { $in: requests.map((request) => request.from_user_id) } })
-          .select('full_name bio profile_photo_base64 show_photo_to_others')
+          .select('full_name bio verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 show_photo_to_others')
           .lean()
       : [];
 
@@ -106,7 +107,17 @@ export const socialService = {
         fromUserId: request.from_user_id,
         fullName: sender?.full_name || request.from_user_id,
         bio: sender?.bio,
-        photoBase64: sender?.show_photo_to_others ? sender?.profile_photo_base64 : undefined
+        photoBase64: resolveVisibleProfilePhoto({
+          fullName: sender?.full_name,
+          profilePhotoBase64:
+            sender?.verified_profile_photo_base64 ||
+            (sender?.profile_photo_base64 && !isGeneratedAvatarDataUri(sender.profile_photo_base64)
+              ? sender.profile_photo_base64
+              : undefined) ||
+            sender?.avatar_photo_base64,
+          showPhotoToOthers: sender?.show_photo_to_others,
+          fallbackLabel: request.from_user_id
+        })
       };
     });
   },
@@ -139,7 +150,7 @@ export const socialService = {
     const [friends, community] = await Promise.all([
       friendIds.length
         ? User.find({ _id: { $in: friendIds } })
-            .select('full_name bio profile_photo_base64 home_neighborhood show_photo_to_others')
+            .select('full_name bio verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 home_neighborhood show_photo_to_others')
             .sort({ full_name: 1 })
             .lean()
         : Promise.resolve([]),
@@ -149,7 +160,7 @@ export const socialService = {
             home_neighborhood: user.home_neighborhood,
             ...(regex ? { full_name: regex } : {})
           })
-            .select('full_name bio profile_photo_base64 home_neighborhood show_photo_to_others')
+            .select('full_name bio verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 home_neighborhood show_photo_to_others')
             .sort({ full_name: 1 })
             .limit(25)
             .lean()
@@ -166,6 +177,8 @@ export const socialService = {
       _id: string;
       full_name?: string;
       bio?: string;
+      verified_profile_photo_base64?: string;
+      avatar_photo_base64?: string;
       profile_photo_base64?: string;
       home_neighborhood?: string;
       show_photo_to_others?: boolean;
@@ -173,7 +186,17 @@ export const socialService = {
       userId: String(entry._id),
       fullName: entry.full_name || String(entry._id),
       bio: entry.bio,
-      photoBase64: entry.show_photo_to_others ? entry.profile_photo_base64 : undefined,
+      photoBase64: resolveVisibleProfilePhoto({
+        fullName: entry.full_name,
+        profilePhotoBase64:
+          entry.verified_profile_photo_base64 ||
+          (entry.profile_photo_base64 && !isGeneratedAvatarDataUri(entry.profile_photo_base64)
+            ? entry.profile_photo_base64
+            : undefined) ||
+          entry.avatar_photo_base64,
+        showPhotoToOthers: entry.show_photo_to_others,
+        fallbackLabel: String(entry._id)
+      }),
       neighborhood: entry.home_neighborhood ?? null,
       relationship: friendIdSet.has(String(entry._id))
         ? 'friends'

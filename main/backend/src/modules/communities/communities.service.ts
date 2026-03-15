@@ -1,4 +1,5 @@
 import { HttpError } from '../../shared/utils/http-error';
+import { ensureStoredProfilePhoto, isGeneratedAvatarDataUri, resolveVisibleProfilePhoto } from '../../shared/utils/avatar';
 import { User } from '../identity/identity.model';
 import { FriendRequest } from '../social/social.model';
 import { Community, CommunityInvite, CommunityMembership, CommunityMessage, CommunitySettings } from './communities.model';
@@ -459,7 +460,7 @@ export const communitiesService = {
         id: String(message._id),
         userId: message.user_id,
         userName: message.user_name,
-        userPhotoBase64: message.user_photo_base64,
+        userPhotoBase64: message.user_photo_base64 || ensureStoredProfilePhoto({ fullName: message.user_name, fallbackLabel: message.user_id }),
         text: message.text,
         imageBase64: message.image_base64,
         createdAt: message.created_at.toISOString(),
@@ -475,7 +476,7 @@ export const communitiesService = {
   ): Promise<GroupChatMessage> {
     await requireGroupAccess(userId, communityId);
     const user = await User.findById(userId)
-      .select('full_name profile_photo_base64 document_number')
+      .select('full_name verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 document_number show_photo_to_others')
       .lean();
 
     if (!user) {
@@ -492,7 +493,17 @@ export const communitiesService = {
       community_id: communityId,
       user_id: userId,
       user_name: user.full_name || user.document_number || userId,
-      user_photo_base64: user.profile_photo_base64,
+      user_photo_base64: resolveVisibleProfilePhoto({
+        fullName: user.full_name,
+        profilePhotoBase64:
+          user.verified_profile_photo_base64 ||
+          (user.profile_photo_base64 && !isGeneratedAvatarDataUri(user.profile_photo_base64)
+            ? user.profile_photo_base64
+            : undefined) ||
+          user.avatar_photo_base64,
+        showPhotoToOthers: user.show_photo_to_others,
+        fallbackLabel: user.document_number || userId
+      }),
       text,
       image_base64: imageBase64
     });
@@ -607,7 +618,7 @@ export const communitiesService = {
     ]);
 
     const users = await User.find({ _id: { $in: memberships.map((entry) => entry.user_id) } })
-      .select('full_name bio profile_photo_base64')
+      .select('full_name bio verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 show_photo_to_others')
       .lean();
 
     const memberIds = new Set(memberships.map((entry) => entry.user_id));
@@ -636,7 +647,17 @@ export const communitiesService = {
           role: entry.role,
           status: entry.status,
           bio: user?.bio,
-          photoBase64: user?.profile_photo_base64
+          photoBase64: resolveVisibleProfilePhoto({
+            fullName: user?.full_name,
+            profilePhotoBase64:
+              user?.verified_profile_photo_base64 ||
+              (user?.profile_photo_base64 && !isGeneratedAvatarDataUri(user.profile_photo_base64)
+                ? user.profile_photo_base64
+                : undefined) ||
+              user?.avatar_photo_base64,
+            showPhotoToOthers: user?.show_photo_to_others,
+            fallbackLabel: entry.user_id
+          })
         };
       }),
       invitableFriends:

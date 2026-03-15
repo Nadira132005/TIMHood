@@ -155,7 +155,18 @@ const communitySchema = new Schema<ICommunity>(
 
 communitySchema.index({ visibility: 1, state: 1 });
 communitySchema.index({ neighborhood_name: 1, group_kind: 1 });
-communitySchema.index({ neighborhood_name: 1, group_key: 1 }, { unique: true, sparse: true });
+communitySchema.index(
+  { neighborhood_name: 1, group_key: 1 },
+  {
+    name: 'community_standard_group_key_unique',
+    unique: true,
+    partialFilterExpression: {
+      group_kind: 'standard',
+      neighborhood_name: { $exists: true, $type: 'string' },
+      group_key: { $exists: true, $type: 'string' }
+    }
+  }
+);
 
 const communitySettingsSchema = new Schema<ICommunitySettings>(
   {

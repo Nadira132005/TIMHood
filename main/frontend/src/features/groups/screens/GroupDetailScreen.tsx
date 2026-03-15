@@ -1,6 +1,6 @@
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -71,6 +71,7 @@ type GroupMembersPreviewResponse = {
 };
 
 export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers, onGroupLeft, onGroupDeleted }: Props) {
+  const messagesScrollRef = useRef<ScrollView | null>(null);
   const [data, setData] = useState<GroupChatResponse | null>(null);
   const [membersPreview, setMembersPreview] = useState<GroupMemberPreview[]>([]);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
@@ -98,6 +99,18 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers, onG
   useEffect(() => {
     void load();
   }, [groupId, profile.userId]);
+
+  useEffect(() => {
+    if (!data?.messages.length) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      messagesScrollRef.current?.scrollToEnd({ animated: false });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [data?.messages.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -263,7 +276,12 @@ export function GroupDetailScreen({ profile, groupId, onBack, onOpenMembers, onG
             <Text style={styles.headerHint}>Tap group name for description and participants</Text>
           </Pressable>
 
-          <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
+          <ScrollView
+            ref={messagesScrollRef}
+            style={styles.messages}
+            contentContainerStyle={styles.messagesContent}
+            onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: false })}
+          >
             {data.messages.map((message) => (
               <View key={message.id} style={[styles.messageRow, message.isOwnMessage && styles.messageRowOwn]}>
                 {!message.isOwnMessage ? (
