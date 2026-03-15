@@ -1,5 +1,6 @@
 import { User } from '../identity/identity.model';
 import { HttpError } from '../../shared/utils/http-error';
+import { ensureStoredProfilePhoto, isGeneratedAvatarDataUri, resolveVisibleProfilePhoto } from '../../shared/utils/avatar';
 import {
   getNeighborhoodSeeds,
   LngLat,
@@ -237,7 +238,7 @@ export const neighborhoodsService = {
           userId: message.user_id,
           userName: message.user_name,
           userDocumentNumber: message.user_document_number,
-          userPhotoBase64: message.user_photo_base64,
+          userPhotoBase64: message.user_photo_base64 || ensureStoredProfilePhoto({ fullName: message.user_name, fallbackLabel: message.user_id }),
           text: message.text,
           imageBase64: message.image_base64,
           createdAt: message.created_at.toISOString(),
@@ -251,7 +252,7 @@ export const neighborhoodsService = {
     payload: SendNeighborhoodMessagePayload
   ): Promise<NeighborhoodChatMessage> {
     const user = await User.findById(userId)
-      .select('document_number full_name profile_photo_base64 home_neighborhood')
+      .select('document_number full_name verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 home_neighborhood show_photo_to_others')
       .lean();
 
     if (!user) {
@@ -275,7 +276,17 @@ export const neighborhoodsService = {
       user_id: userId,
       user_name: user.full_name || user.document_number,
       user_document_number: user.document_number || userId,
-      user_photo_base64: user.profile_photo_base64,
+      user_photo_base64: resolveVisibleProfilePhoto({
+        fullName: user.full_name,
+        profilePhotoBase64:
+          user.verified_profile_photo_base64 ||
+          (user.profile_photo_base64 && !isGeneratedAvatarDataUri(user.profile_photo_base64)
+            ? user.profile_photo_base64
+            : undefined) ||
+          user.avatar_photo_base64,
+        showPhotoToOthers: user.show_photo_to_others,
+        fallbackLabel: user.document_number || userId
+      }),
       text,
       image_base64: imageBase64
     });

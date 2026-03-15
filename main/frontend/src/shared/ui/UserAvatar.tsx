@@ -44,7 +44,9 @@ type Props = {
 
 export function UserAvatar({ photoBase64, label, size = 40 }: Props) {
   const imageUri = toImageUri(photoBase64);
-  if (imageUri) {
+  const isSvgAvatar = imageUri?.startsWith('data:image/svg+xml') ?? false;
+
+  if (imageUri && !isSvgAvatar) {
     return <Image source={{ uri: imageUri }} style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]} />;
   }
 

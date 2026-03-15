@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AddressScreen } from '../features/address/screens/AddressScreen';
 import { LoginScreen } from '../features/auth/screens/LoginScreen';
+import { DirectChatScreen } from '../features/chat/screens/DirectChatScreen';
 import { DashboardScreen } from '../features/dashboard/screens/DashboardScreen';
 import { DiscoverGroupsScreen } from '../features/groups/screens/DiscoverGroupsScreen';
 import { GroupDetailScreen } from '../features/groups/screens/GroupDetailScreen';
@@ -23,7 +24,8 @@ type Route =
   | 'group-detail'
   | 'group-members'
   | 'friends'
-  | 'requests';
+  | 'requests'
+  | 'direct-chat';
 
 type GroupSourceRoute = 'groups' | 'joined-groups';
 
@@ -32,6 +34,8 @@ export function AppShell() {
   const [route, setRoute] = useState<Route>('dashboard');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedGroupSource, setSelectedGroupSource] = useState<GroupSourceRoute>('joined-groups');
+  const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
+  const [selectedChatUserName, setSelectedChatUserName] = useState<string | null>(null);
   const needsAddress = session.profile && !session.profile.homeAddressLabel;
 
   useEffect(() => {
@@ -113,11 +117,31 @@ export function AppShell() {
             profile={session.profile}
             groupId={selectedGroupId}
             onBack={() => setRoute('group-detail')}
+            onOpenChat={(userId, fullName) => {
+              setSelectedChatUserId(userId);
+              setSelectedChatUserName(fullName);
+              setRoute('direct-chat');
+            }}
           />
         ) : route === 'requests' ? (
           <RequestsScreen profile={session.profile} onBack={() => setRoute('dashboard')} />
+        ) : route === 'direct-chat' && selectedChatUserId && selectedChatUserName ? (
+          <DirectChatScreen
+            profile={session.profile}
+            targetUserId={selectedChatUserId}
+            targetUserName={selectedChatUserName}
+            onBack={() => setRoute('friends')}
+          />
         ) : route === 'friends' ? (
-          <FriendsScreen profile={session.profile} onBack={() => setRoute('dashboard')} />
+          <FriendsScreen
+            profile={session.profile}
+            onBack={() => setRoute('dashboard')}
+            onOpenChat={(userId, fullName) => {
+              setSelectedChatUserId(userId);
+              setSelectedChatUserName(fullName);
+              setRoute('direct-chat');
+            }}
+          />
         ) : (
           <DashboardScreen
             profile={session.profile}

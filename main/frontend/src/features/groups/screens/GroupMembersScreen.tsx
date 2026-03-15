@@ -14,6 +14,7 @@ type Props = {
   profile: FixedIdentityProfile;
   groupId: string;
   onBack(): void;
+  onOpenChat(userId: string, fullName: string): void;
 };
 
 type GroupDetails = {
@@ -61,20 +62,7 @@ type RelationshipResponse = {
   status: 'self' | 'friends' | 'request_sent' | 'request_received' | 'none';
 };
 
-type DirectChatMessage = {
-  id: string;
-  text?: string;
-  imageBase64?: string;
-  createdAt: string;
-  isOwnMessage: boolean;
-};
-
-type DirectChatResponse = {
-  relationship: 'friends';
-  messages: DirectChatMessage[];
-};
-
-export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
+export function GroupMembersScreen({ profile, groupId, onBack, onOpenChat }: Props) {
   const [data, setData] = useState<GroupMembersResponse | null>(null);
   const [busy, setBusy] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -82,9 +70,6 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
   const [selectedMember, setSelectedMember] = useState<GroupMember | null>(null);
   const [publicProfile, setPublicProfile] = useState<PublicProfile | null>(null);
   const [relationship, setRelationship] = useState<RelationshipResponse['status']>('none');
-  const [directChat, setDirectChat] = useState<DirectChatResponse | null>(null);
-  const [directMessageText, setDirectMessageText] = useState('');
-
   useEffect(() => {
     let mounted = true;
 
@@ -179,8 +164,6 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
       ]);
       setPublicProfile(profileResponse);
       setRelationship(relationshipResponse.status);
-      setDirectChat(null);
-      setDirectMessageText('');
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load member actions.');
@@ -218,51 +201,14 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
     if (!selectedMember) {
       return;
     }
-
-    try {
-      const response = await apiGet<DirectChatResponse>(`/social/direct-chats/${selectedMember.userId}`, profile.userId);
-      setDirectChat(response);
-      setError(null);
-    } catch (chatError) {
-      setError(chatError instanceof Error ? chatError.message : 'Unable to open private chat.');
-    }
-  }
-
-  async function handleSendDirectMessage() {
-    if (!selectedMember || !directMessageText.trim()) {
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const response = await apiPost<DirectChatMessage>(
-        `/social/direct-chats/${selectedMember.userId}/messages`,
-        { text: directMessageText },
-        profile.userId
-      );
-      setDirectChat((current) =>
-        current
-          ? {
-              ...current,
-              messages: [...current.messages, response]
-            }
-          : current
-      );
-      setDirectMessageText('');
-      setError(null);
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Unable to send private message.');
-    } finally {
-      setSubmitting(false);
-    }
+    closeMemberActions();
+    onOpenChat(selectedMember.userId, selectedMember.fullName);
   }
 
   function closeMemberActions() {
     setSelectedMember(null);
     setPublicProfile(null);
     setRelationship('none');
-    setDirectChat(null);
-    setDirectMessageText('');
   }
 
   const canManage = data?.requesterRole === 'owner' || data?.requesterRole === 'admin';
@@ -380,42 +326,6 @@ export function GroupMembersScreen({ profile, groupId, onBack }: Props) {
                 {relationship === 'request_sent' ? 'Friend request already sent.' : 'This is your own member card.'}
               </Text>
             )}
-
-            {directChat ? (
-              <View style={styles.directChatBlock}>
-                <Text style={styles.memberName}>Private Chat</Text>
-                <ScrollView style={styles.directMessages} contentContainerStyle={styles.directMessagesContent}>
-                  {directChat.messages.map((message) => (
-                    <View
-                      key={message.id}
-                      style={[styles.directBubble, message.isOwnMessage ? styles.ownBubble : styles.otherBubble]}
-                    >
-                      {message.text ? <Text style={styles.bodyText}>{message.text}</Text> : null}
-                      <Text style={styles.directTimestamp}>
-                        {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                    </View>
-                  ))}
-                </ScrollView>
-                <View style={styles.directComposer}>
-                  <TextInput
-                    value={directMessageText}
-                    onChangeText={setDirectMessageText}
-                    placeholder="Write a private message"
-                    placeholderTextColor={colors.textMuted}
-                    style={styles.directInput}
-                    multiline
-                  />
-                  <Pressable
-                    style={[styles.actionButton, submitting && styles.buttonDisabled]}
-                    onPress={handleSendDirectMessage}
-                    disabled={submitting}
-                  >
-                    <Text style={styles.actionButtonText}>Send</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
 
             <Pressable style={styles.closeButton} onPress={closeMemberActions}>
               <Text style={styles.closeButtonText}>Close</Text>
@@ -568,53 +478,6 @@ const styles = StyleSheet.create({
   pendingText: {
     color: colors.textMuted,
     lineHeight: 20
-  },
-  directChatBlock: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-    gap: spacing.sm
-  },
-  directMessages: {
-    maxHeight: 220
-  },
-  directMessagesContent: {
-    gap: spacing.xs
-  },
-  directBubble: {
-    borderRadius: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
-  },
-  ownBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#D7F5EE'
-  },
-  otherBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F3F4F6'
-  },
-  directTimestamp: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 4
-  },
-  directComposer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm
-  },
-  directInput: {
-    flex: 1,
-    minHeight: 44,
-    maxHeight: 110,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
-    backgroundColor: '#F9FAFB'
   },
   closeButton: {
     minHeight: 42,

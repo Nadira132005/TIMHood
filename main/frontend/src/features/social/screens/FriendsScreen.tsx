@@ -13,6 +13,7 @@ import { toImageUri } from '../../../shared/utils/images';
 type Props = {
   profile: FixedIdentityProfile;
   onBack(): void;
+  onOpenChat(userId: string, fullName: string): void;
 };
 
 type ContactItem = {
@@ -29,7 +30,7 @@ type ContactsResponse = {
   community: ContactItem[];
 };
 
-export function FriendsScreen({ profile, onBack }: Props) {
+export function FriendsScreen({ profile, onBack, onOpenChat }: Props) {
   const [query, setQuery] = useState('');
   const [data, setData] = useState<ContactsResponse>({ friends: [], community: [] });
   const [busy, setBusy] = useState(true);
@@ -101,7 +102,17 @@ export function FriendsScreen({ profile, onBack }: Props) {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           <SectionCard title={`Your Friends (${data.friends.length})`}>
-            {data.friends.length ? data.friends.map((friend) => <ContactRow key={friend.userId} item={friend} />) : <Text style={styles.bodyText}>No friends yet.</Text>}
+            {data.friends.length ? (
+              data.friends.map((friend) => (
+                <ContactRow
+                  key={friend.userId}
+                  item={friend}
+                  onPress={() => onOpenChat(friend.userId, friend.fullName)}
+                />
+              ))
+            ) : (
+              <Text style={styles.bodyText}>No friends yet.</Text>
+            )}
           </SectionCard>
 
           <SectionCard title={`From Your Community (${data.community.length})`}>
@@ -129,11 +140,13 @@ export function FriendsScreen({ profile, onBack }: Props) {
 function ContactRow({
   item,
   submitting,
-  onAction
+  onAction,
+  onPress
 }: {
   item: ContactItem;
   submitting?: boolean;
   onAction?(): void;
+  onPress?(): void;
 }) {
   const actionLabel =
     item.relationship === 'friends'
@@ -144,7 +157,7 @@ function ContactRow({
           ? 'Accept'
           : 'Add friend';
 
-  return (
+  const content = (
     <View style={styles.row}>
       <UserAvatar photoBase64={item.photoBase64} label={item.fullName} size={44} />
       <View style={styles.copy}>
@@ -163,6 +176,16 @@ function ContactRow({
       ) : null}
     </View>
   );
+
+  if (item.relationship === 'friends' && onPress) {
+    return (
+      <Pressable onPress={onPress} style={styles.rowButton}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return content;
 }
 
 const styles = StyleSheet.create({
@@ -213,6 +236,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     alignItems: 'center'
+  },
+  rowButton: {
+    borderRadius: 18
   },
   copy: {
     flex: 1

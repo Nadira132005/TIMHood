@@ -1,5 +1,11 @@
 import crypto from 'crypto';
 
+import {
+  buildInitialsAvatar,
+  ensureStoredProfilePhoto,
+  isGeneratedAvatarDataUri,
+  resolveVisibleProfilePhoto
+} from '../../shared/utils/avatar';
 import { HttpError } from '../../shared/utils/http-error';
 import { communitiesService } from '../communities/communities.service';
 import { neighborhoodsService } from '../neighborhoods/neighborhoods.service';
@@ -150,6 +156,8 @@ function buildFixedProfile(user: {
   issuing_state?: string;
   date_of_birth?: Date;
   date_of_expiry?: Date;
+  verified_profile_photo_base64?: string;
+  avatar_photo_base64?: string;
   profile_photo_base64?: string;
   bio?: string;
   show_photo_to_others?: boolean;
@@ -179,7 +187,19 @@ function buildFixedProfile(user: {
     issuingState: user.issuing_state,
     dateOfBirth: toIsoDate(user.date_of_birth)!,
     dateOfExpiry: toIsoDate(user.date_of_expiry)!,
-    photoBase64: user.profile_photo_base64,
+    photoBase64:
+      user.verified_profile_photo_base64 ||
+      (user.profile_photo_base64 && !isGeneratedAvatarDataUri(user.profile_photo_base64)
+        ? user.profile_photo_base64
+        : undefined) ||
+      user.avatar_photo_base64 ||
+      ensureStoredProfilePhoto({
+        fullName: user.full_name,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        profilePhotoBase64: user.profile_photo_base64,
+        fallbackLabel: user.document_number
+      }),
     bio: user.bio,
     showPhotoToOthers: user.show_photo_to_others ?? true,
     showAgeToOthers: user.show_age_to_others ?? true,
@@ -228,25 +248,6 @@ function getAge(dateOfBirth?: Date): number | undefined {
   return age;
 }
 
-function buildDemoAvatar(firstName: string, lastName: string, background: string): string {
-  const initials = `${firstName.slice(0, 1)}${lastName.slice(0, 1)}`.toUpperCase();
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${background}" />
-          <stop offset="100%" stop-color="#0F172A" />
-        </linearGradient>
-      </defs>
-      <rect width="240" height="240" rx="52" fill="url(#g)" />
-      <circle cx="120" cy="120" r="74" fill="rgba(255,255,255,0.16)" />
-      <text x="120" y="142" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#ffffff">${initials}</text>
-    </svg>
-  `.trim();
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 const DEMO_USERS: Record<
   string,
   {
@@ -274,7 +275,7 @@ const DEMO_USERS: Record<
     bio: 'Coffee walks, school pickup coordination, and neighborhood updates.',
     homeAddressLabel: 'Aleea FC Ripensia 12',
     homeNeighborhood: 'Soarelui',
-    photoDataUri: buildDemoAvatar('Mara', 'Popescu', '#A855F7')
+    photoDataUri: buildInitialsAvatar('Mara Popescu')
   },
   '0001': {
     documentNumber: 'SOARELUI-DEMO-0001',
@@ -287,7 +288,7 @@ const DEMO_USERS: Record<
     bio: 'Plays football on weekends and helps with small repairs.',
     homeAddressLabel: 'Strada Sirius 8',
     homeNeighborhood: 'Soarelui',
-    photoDataUri: buildDemoAvatar('Andrei', 'Ionescu', '#0F766E')
+    photoDataUri: buildInitialsAvatar('Andrei Ionescu')
   },
   '0002': {
     documentNumber: 'SOARELUI-DEMO-0002',
@@ -300,7 +301,7 @@ const DEMO_USERS: Record<
     bio: 'Pet-friendly neighbor, marketplace regular, and event organizer.',
     homeAddressLabel: 'Bulevardul Sudului 18',
     homeNeighborhood: 'Soarelui',
-    photoDataUri: buildDemoAvatar('Teodora', 'Marin', '#EA580C')
+    photoDataUri: buildInitialsAvatar('Teodora Marin')
   }
 };
 
@@ -334,6 +335,8 @@ export const identityService = {
           issuing_state: demoUser.issuingState,
           date_of_birth: dateOfBirth,
           date_of_expiry: dateOfExpiry,
+          verified_profile_photo_base64: demoUser.photoDataUri,
+          avatar_photo_base64: buildInitialsAvatar(`${demoUser.firstName} ${demoUser.lastName}`),
           profile_photo_base64: demoUser.photoDataUri,
           bio: demoUser.bio,
           show_photo_to_others: true,
@@ -398,6 +401,8 @@ export const identityService = {
     const fullName = `${firstName} ${lastName}`.trim();
     const documentNumberHash = hashDocumentNumber(documentNumber);
     const documentNumberEncoded = encodeDocumentNumber(documentNumber);
+    const verifiedPhotoBase64 = payload.photoBase64?.trim() || undefined;
+    const avatarPhotoBase64 = buildInitialsAvatar(fullName);
     const duplicateWithDifferentId = await User.findOne({
       document_number: documentNumber,
       _id: { $ne: documentNumber }
@@ -441,7 +446,9 @@ export const identityService = {
           issuing_state: issuingState,
           date_of_birth: dateOfBirth,
           date_of_expiry: dateOfExpiry,
-          profile_photo_base64: payload.photoBase64,
+          verified_profile_photo_base64: verifiedPhotoBase64,
+          avatar_photo_base64: avatarPhotoBase64,
+          profile_photo_base64: verifiedPhotoBase64 || avatarPhotoBase64,
           show_photo_to_others: true,
           show_age_to_others: true,
           verification_state: 'verified',
@@ -475,7 +482,7 @@ export const identityService = {
   async getFixedProfile(documentNumber: string): Promise<FixedProfileResponse | null> {
     const user = await User.findOne({ document_number: documentNumber.trim().toUpperCase() })
       .select(
-        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry profile_photo_base64 bio show_photo_to_others show_age_to_others home_address_label home_neighborhood'
+        'document_number first_name last_name full_name nationality issuing_state date_of_birth date_of_expiry verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 bio show_photo_to_others show_age_to_others home_address_label home_neighborhood'
       )
       .lean();
 
@@ -488,7 +495,7 @@ export const identityService = {
 
   async getPublicProfile(userId: string, viewerUserId?: string): Promise<PublicProfileResponse | null> {
     const user = await User.findById(userId)
-      .select('full_name profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at show_photo_to_others show_age_to_others')
+      .select('full_name verified_profile_photo_base64 avatar_photo_base64 profile_photo_base64 bio date_of_birth home_neighborhood last_seen_at show_photo_to_others show_age_to_others')
       .lean();
 
     if (!user) {
@@ -501,7 +508,18 @@ export const identityService = {
     return {
       userId,
       fullName: user.full_name || userId,
-      photoBase64: canSeePrivateFields || user.show_photo_to_others ? user.profile_photo_base64 : undefined,
+      photoBase64: resolveVisibleProfilePhoto({
+        fullName: user.full_name,
+        profilePhotoBase64:
+          user.verified_profile_photo_base64 ||
+          (user.profile_photo_base64 && !isGeneratedAvatarDataUri(user.profile_photo_base64)
+            ? user.profile_photo_base64
+            : undefined) ||
+          user.avatar_photo_base64,
+        showPhotoToOthers: user.show_photo_to_others,
+        canSeePrivatePhoto: canSeePrivateFields,
+        fallbackLabel: userId
+      }),
       bio: user.bio,
       age: canSeePrivateFields || user.show_age_to_others ? getAge(user.date_of_birth) : undefined,
       neighborhood: user.home_neighborhood ?? null,

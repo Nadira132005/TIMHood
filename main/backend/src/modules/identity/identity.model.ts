@@ -23,6 +23,8 @@ export interface IUser {
   issuing_state?: string;
   date_of_birth?: Date;
   date_of_expiry?: Date;
+  verified_profile_photo_base64?: string;
+  avatar_photo_base64?: string;
   profile_photo_base64?: string;
   bio?: string;
   show_photo_to_others: boolean;
@@ -70,6 +72,8 @@ const userSchema = new Schema<IUser>(
     issuing_state: { type: String },
     date_of_birth: { type: Date },
     date_of_expiry: { type: Date },
+    verified_profile_photo_base64: { type: String },
+    avatar_photo_base64: { type: String },
     profile_photo_base64: { type: String },
     bio: { type: String },
     show_photo_to_others: { type: Boolean, default: true, required: true },
