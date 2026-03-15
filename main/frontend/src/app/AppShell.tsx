@@ -7,6 +7,7 @@ import { DirectChatScreen } from "../features/chat/screens/DirectChatScreen";
 import { DashboardScreen } from "../features/dashboard/screens/DashboardScreen";
 import { DiscoverGroupsScreen } from "../features/groups/screens/DiscoverGroupsScreen";
 import { GroupDetailScreen } from "../features/groups/screens/GroupDetailScreen";
+import { GroupEventApprovalsScreen } from "../features/groups/screens/GroupEventApprovalsScreen";
 import { GroupMembersScreen } from "../features/groups/screens/GroupMembersScreen";
 import { JoinedGroupsScreen } from "../features/groups/screens/JoinedGroupsScreen";
 import { FriendsScreen } from "../features/social/screens/FriendsScreen";
@@ -31,6 +32,7 @@ type Route =
   | "joined-groups"
   | "group-detail"
   | "group-members"
+  | "group-event-approvals"
   | "friends"
   | "requests"
   | "direct-chat";
@@ -157,6 +159,7 @@ export function AppShell() {
             groupId={selectedGroupId}
             onBack={() => setRoute(selectedGroupSource)}
             onOpenMembers={() => setRoute("group-members")}
+            onOpenEventApprovals={() => setRoute("group-event-approvals")}
             onGroupLeft={() => {
               setSelectedGroupId(null);
               setRoute("joined-groups");
@@ -165,6 +168,12 @@ export function AppShell() {
               setSelectedGroupId(null);
               setRoute("joined-groups");
             }}
+          />
+        ) : route === "group-event-approvals" && selectedGroupId ? (
+          <GroupEventApprovalsScreen
+            profile={session.profile}
+            groupId={selectedGroupId}
+            onBack={() => setRoute("group-detail")}
           />
         ) : route === "group-members" && selectedGroupId ? (
           <GroupMembersScreen

@@ -202,6 +202,22 @@ function isCommunityAdmin(role?: string | null) {
   return role === "owner" || role === "admin";
 }
 
+function getEffectiveRole(
+  community: { created_by_user_id: string },
+  userId: string,
+  membership?: { role?: string } | null,
+): "owner" | "admin" | "member" {
+  if (community.created_by_user_id === userId) {
+    return "owner";
+  }
+
+  if (membership?.role === "owner" || membership?.role === "admin") {
+    return membership.role;
+  }
+
+  return "member";
+}
+
 function canLeaveCommunity(
   community: { group_kind: string; group_key?: string | null },
   membership?: { role?: string } | null,
@@ -234,13 +250,15 @@ function mapCommunityListItem(
   userId: string,
   membership?: { role?: string } | null,
 ): CommunityListItem {
+  const effectiveRole = getEffectiveRole(community, userId, membership);
+
   return {
     id: String(community._id),
     name: community.name,
     slug: community.slug,
     description: community.description,
     membersCount: community.members_count,
-    role: membership?.role,
+    role: effectiveRole,
     visibility: community.visibility,
     groupKind: community.group_kind,
     neighborhoodName: community.neighborhood_name,
@@ -328,15 +346,19 @@ async function ensureNeighborhoodStandardGroups(
     const community = await Community.findOneAndUpdate(
       { neighborhood_name: neighborhoodName, group_key: group.key },
       {
-        name: `${neighborhoodName} · ${group.name}`,
-        slug: `${neighborhoodSlug}-${group.key}`,
-        description: group.description,
-        created_by_user_id: ownerUserId,
-        neighborhood_name: neighborhoodName,
-        group_kind: "standard",
-        group_key: group.key,
-        visibility: "public",
-        state: "active",
+        $set: {
+          name: `${neighborhoodName} · ${group.name}`,
+          slug: `${neighborhoodSlug}-${group.key}`,
+          description: group.description,
+          neighborhood_name: neighborhoodName,
+          group_kind: "standard",
+          group_key: group.key,
+          visibility: "public",
+          state: "active",
+        },
+        $setOnInsert: {
+          created_by_user_id: ownerUserId,
+        },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
@@ -961,8 +983,8 @@ export const communitiesService = {
     communityId: string,
     eventMessageId: string,
   ) {
-    const { membership } = await requireGroupAccess(userId, communityId);
-    if (!isCommunityAdmin(membership.role)) {
+    const { community, membership } = await requireGroupAccess(userId, communityId);
+    if (!isCommunityAdmin(getEffectiveRole(community, userId, membership))) {
       throw new HttpError(403, "Only group admins can approve events");
     }
 
@@ -983,8 +1005,8 @@ export const communitiesService = {
     communityId: string,
     eventMessageId: string,
   ) {
-    const { membership } = await requireGroupAccess(userId, communityId);
-    if (!isCommunityAdmin(membership.role)) {
+    const { community, membership } = await requireGroupAccess(userId, communityId);
+    if (!isCommunityAdmin(getEffectiveRole(community, userId, membership))) {
       throw new HttpError(403, "Only group admins can reject events");
     }
 
@@ -1178,7 +1200,7 @@ export const communitiesService = {
           .select("invitee_user_id")
           .lean(),
         mapFriends(userId),
-        isCommunityAdmin(membership.role)
+        isCommunityAdmin(getEffectiveRole(community, userId, membership))
           ? CommunityMessage.find({
               community_id: communityId,
               message_type: "event",
@@ -1204,7 +1226,7 @@ export const communitiesService = {
 
     return {
       group: mapCommunityListItem(community, userId, membership),
-      requesterRole: membership.role,
+      requesterRole: getEffectiveRole(community, userId, membership),
       members: memberships.map((entry) => {
         const user = users.find(
           (candidate) => String(candidate._id) === entry.user_id,

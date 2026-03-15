@@ -31,6 +31,7 @@ type Props = {
   groupId: string;
   onBack(): void;
   onOpenMembers(): void;
+  onOpenEventApprovals(): void;
   onGroupLeft(): void;
   onGroupDeleted(): void;
 };
@@ -237,6 +238,7 @@ export function GroupDetailScreen({
   groupId,
   onBack,
   onOpenMembers,
+  onOpenEventApprovals,
   onGroupLeft,
   onGroupDeleted,
 }: Props) {
@@ -961,6 +963,14 @@ export function GroupDetailScreen({
           >
             <Text style={styles.eventLaunchButtonText}>Create event</Text>
           </Pressable>
+          {data.group.role === "owner" || data.group.role === "admin" ? (
+            <Pressable
+              style={styles.eventReviewButton}
+              onPress={onOpenEventApprovals}
+            >
+              <Text style={styles.eventReviewButtonText}>Review events</Text>
+            </Pressable>
+          ) : null}
 
           <ScrollView
             ref={messagesScrollRef}
@@ -1506,6 +1516,20 @@ const styles = StyleSheet.create({
   },
   eventLaunchButtonText: {
     color: "#ffffff",
+    fontWeight: "800",
+  },
+  eventReviewButton: {
+    alignSelf: "flex-start",
+    marginBottom: spacing.sm,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  eventReviewButtonText: {
+    color: colors.text,
     fontWeight: "800",
   },
   messages: {

@@ -154,6 +154,23 @@ interface ICommunityMessage {
   updated_at: Date;
 }
 
+const optionalPointSchema = new Schema<GeoPoint>(
+  {
+    type: { type: String, enum: ['Point'], required: true },
+    coordinates: {
+      type: [Number],
+      required: true,
+      validate: {
+        validator(value: number[]) {
+          return value.length === 2;
+        },
+        message: 'Coordinates must be [lng, lat]'
+      }
+    }
+  },
+  { _id: false }
+);
+
 const communitySchema = new Schema<ICommunity>(
   {
     name: { type: String, required: true },
@@ -296,21 +313,7 @@ const communityAccessPolicySchema = new Schema<ICommunityAccessPolicy>(
       required: true
     },
     city_codes: { type: [String], default: undefined },
-    center_point: {
-      type: {
-        type: String,
-        enum: ['Point']
-      },
-      coordinates: {
-        type: [Number],
-        validate: {
-          validator(value: number[]) {
-            return !value || value.length === 2;
-          },
-          message: 'Coordinates must be [lng, lat]'
-        }
-      }
-    },
+    center_point: { type: optionalPointSchema, required: false },
     radius_km: { type: Number },
     polygon: { type: Schema.Types.Mixed },
     is_active: { type: Boolean, default: true, required: true }
@@ -359,21 +362,7 @@ const communityMessageSchema = new Schema<ICommunityMessage>(
     event_starts_at: { type: Date },
     event_ends_at: { type: Date },
     event_location_label: { type: String },
-    event_location_point: {
-      type: {
-        type: String,
-        enum: ['Point']
-      },
-      coordinates: {
-        type: [Number],
-        validate: {
-          validator(value: number[]) {
-            return !value || value.length === 2;
-          },
-          message: 'Coordinates must be [lng, lat]'
-        }
-      }
-    },
+    event_location_point: { type: optionalPointSchema, required: false },
     attendees: {
       type: [
         new Schema(
