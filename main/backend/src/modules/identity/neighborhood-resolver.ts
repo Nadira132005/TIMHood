@@ -1,19 +1,19 @@
-import { resolveNeighborhoodSeedByPoint } from '../neighborhoods/neighborhoods.data';
+import { resolveNeighborhoodSeedByPoint } from "../neighborhoods/utils";
 
 type GeoPoint = {
-  type: 'Point';
+  type: "Point";
   coordinates: [number, number];
 };
 
 type NeighborhoodResolution = {
   neighborhood: string | null;
-  resolutionMode: 'polygon_match' | 'outside_dataset';
+  resolutionMode: "polygon_match" | "outside_dataset";
 };
 
 export function resolveNeighborhood(point: GeoPoint): NeighborhoodResolution {
   const matched = resolveNeighborhoodSeedByPoint(point.coordinates);
   return {
     neighborhood: matched?.name || null,
-    resolutionMode: matched ? 'polygon_match' : 'outside_dataset'
+    resolutionMode: matched ? "polygon_match" : "outside_dataset",
   };
 }

@@ -50,3 +50,5 @@ local.properties
 # Local workspace files
 .README
 **/.README
+
+android/
