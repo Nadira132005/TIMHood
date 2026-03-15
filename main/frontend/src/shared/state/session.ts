@@ -17,19 +17,12 @@ export type FixedIdentityProfile = {
   homeNeighborhood?: string | null;
 };
 
-export type AuthSession = {
-  token: string;
-  expiresAt?: string | null;
-};
-
 export type SessionState = {
   userId: string | null;
-  auth: AuthSession | null;
   profile: FixedIdentityProfile | null;
 };
 
 export const initialSessionState: SessionState = {
   userId: null,
-  auth: null,
   profile: null
 };

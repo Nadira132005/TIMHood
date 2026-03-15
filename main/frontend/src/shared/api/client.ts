@@ -3,35 +3,23 @@ const getApiBaseUrl = () => {
 };
 
 type AuthHeadersOptions = {
-  fallbackUserId?: string;
+  userId?: string;
 };
 
-let authToken: string | null = null;
-
-export function setApiAuthToken(token: string | null) {
-  authToken = token;
-}
-
 function buildHeaders(options?: AuthHeadersOptions): HeadersInit | undefined {
-  if (authToken) {
+  if (options?.userId) {
     return {
-      Authorization: `Bearer ${authToken}`,
-    };
-  }
-
-  if (options?.fallbackUserId) {
-    return {
-      "x-user-id": options.fallbackUserId,
+      "x-user-id": options.userId,
     };
   }
 
   return undefined;
 }
 
-export async function apiGet<T>(path: string, fallbackUserId?: string): Promise<T> {
+export async function apiGet<T>(path: string, userId?: string): Promise<T> {
   const apiBaseUrl = getApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: buildHeaders({ fallbackUserId }),
+    headers: buildHeaders({ userId }),
   });
 
   if (!response.ok) {
@@ -45,14 +33,14 @@ export async function apiGet<T>(path: string, fallbackUserId?: string): Promise<
 export async function apiPost<T>(
   path: string,
   body: unknown,
-  fallbackUserId?: string,
+  userId?: string,
 ): Promise<T> {
   const apiBaseUrl = getApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(buildHeaders({ fallbackUserId }) ?? {}),
+      ...(buildHeaders({ userId }) ?? {}),
     },
     body: JSON.stringify(body),
   });
@@ -65,11 +53,11 @@ export async function apiPost<T>(
   return response.json() as Promise<T>;
 }
 
-export async function apiDelete<T>(path: string, fallbackUserId?: string): Promise<T> {
+export async function apiDelete<T>(path: string, userId?: string): Promise<T> {
   const apiBaseUrl = getApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "DELETE",
-    headers: buildHeaders({ fallbackUserId }),
+    headers: buildHeaders({ userId }),
   });
 
   if (!response.ok) {

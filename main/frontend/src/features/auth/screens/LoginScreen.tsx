@@ -10,14 +10,14 @@ import {
 } from "react-native";
 
 import { apiPost } from "../../../shared/api/client";
-import { AuthSession, FixedIdentityProfile } from "../../../shared/state/session";
+import { FixedIdentityProfile } from "../../../shared/state/session";
 import { colors, spacing } from "../../../shared/theme/tokens";
 import { ScreenContainer } from "../../../shared/ui/ScreenContainer";
 import { SectionCard } from "../../../shared/ui/SectionCard";
 import { readIdentityCard } from "../lib/cei-reader";
 
 type Props = {
-  onLogin(auth: AuthSession, profile: FixedIdentityProfile): void;
+  onLogin(profile: FixedIdentityProfile): void;
 };
 
 type LoginResponse = {
@@ -51,19 +51,13 @@ export function LoginScreen({ onLogin }: Props) {
         const response = await apiPost<LoginResponse>("/identity/demo-login", {
           can: trimmedCan,
         });
-        onLogin(
-          { token: response.token, expiresAt: response.expiresAt ?? null },
-          response.profile,
-        );
+        onLogin(response.profile);
       } else {
         const response = await apiPost<LoginResponse>(
           "/identity/nfc-login",
           await readIdentityCard(trimmedCan),
         );
-        onLogin(
-          { token: response.token, expiresAt: response.expiresAt ?? null },
-          response.profile,
-        );
+        onLogin(response.profile);
       }
     } catch (error) {
       console.error(error);

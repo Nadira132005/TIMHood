@@ -1,15 +1,10 @@
 import { Platform } from "react-native";
 
-import { AuthSession, FixedIdentityProfile, SessionState } from "./session";
-
-type PersistedSession = {
-  auth: AuthSession;
-  profile: FixedIdentityProfile;
-};
+import { SessionState } from "./session";
 
 const STORAGE_KEY = "timhood.session";
 
-let memorySession: PersistedSession | null = null;
+let memoryUserId: string | null = null;
 
 function getSecureStore():
   | {
@@ -51,19 +46,10 @@ function clearWebStorage() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-function toSessionState(session: PersistedSession | null): SessionState {
-  if (!session) {
-    return {
-      userId: null,
-      auth: null,
-      profile: null,
-    };
-  }
-
+function toSessionState(userId: string | null): SessionState {
   return {
-    userId: session.profile.userId,
-    auth: session.auth,
-    profile: session.profile,
+    userId,
+    profile: null,
   };
 }
 
@@ -73,44 +59,31 @@ export async function loadPersistedSession(): Promise<SessionState> {
     ? await secureStore.getItemAsync(STORAGE_KEY)
     : Platform.OS === "web"
       ? readWebStorage()
-      : memorySession
-        ? JSON.stringify(memorySession)
-        : null;
+      : memoryUserId;
 
   if (!raw) {
     return toSessionState(null);
   }
 
-  try {
-    const parsed = JSON.parse(raw) as PersistedSession;
-    memorySession = parsed;
-    return toSessionState(parsed);
-  } catch {
-    await clearPersistedSession();
-    return toSessionState(null);
-  }
+  memoryUserId = raw;
+  return toSessionState(raw);
 }
 
-export async function persistSession(
-  auth: AuthSession,
-  profile: FixedIdentityProfile,
-): Promise<SessionState> {
-  const nextSession: PersistedSession = { auth, profile };
-  const serialized = JSON.stringify(nextSession);
-  memorySession = nextSession;
+export async function persistSession(userId: string): Promise<SessionState> {
+  memoryUserId = userId;
 
   const secureStore = getSecureStore();
   if (secureStore) {
-    await secureStore.setItemAsync(STORAGE_KEY, serialized);
+    await secureStore.setItemAsync(STORAGE_KEY, userId);
   } else if (Platform.OS === "web") {
-    writeWebStorage(serialized);
+    writeWebStorage(userId);
   }
 
-  return toSessionState(nextSession);
+  return toSessionState(userId);
 }
 
 export async function clearPersistedSession(): Promise<void> {
-  memorySession = null;
+  memoryUserId = null;
 
   const secureStore = getSecureStore();
   if (secureStore) {

@@ -12,7 +12,15 @@ import { JoinedGroupsScreen } from "../features/groups/screens/JoinedGroupsScree
 import { FriendsScreen } from "../features/social/screens/FriendsScreen";
 import { RequestsScreen } from "../features/social/screens/RequestsScreen";
 import { WelcomeScreen } from "../features/welcome/screens/WelcomeScreen";
-import { initialSessionState } from "../shared/state/session";
+import {
+  clearPersistedSession,
+  loadPersistedSession,
+  persistSession,
+} from "../shared/state/auth-storage";
+import {
+  FixedIdentityProfile,
+  initialSessionState,
+} from "../shared/state/session";
 import { colors } from "../shared/theme/tokens";
 
 type Route =
@@ -53,14 +61,12 @@ export function AppShell() {
         return;
       }
 
-      setApiAuthToken(storedSession.auth?.token ?? null);
       setSession(storedSession);
       setHydrating(false);
     }
 
     hydrateSession().catch((error) => {
       console.error(error);
-      setApiAuthToken(null);
       if (active) {
         setSession(initialSessionState);
         setHydrating(false);
@@ -80,28 +86,22 @@ export function AppShell() {
     }
   }, [session.profile]);
 
-  async function handleLogin(auth: AuthSession, profile: FixedIdentityProfile) {
-    setApiAuthToken(auth.token);
-    const nextSession = await persistSession(auth, profile);
-    setSession(nextSession);
+  async function handleLogin(profile: FixedIdentityProfile) {
+    await persistSession(profile.userId);
+    setSession({
+      userId: profile.userId,
+      profile,
+    });
   }
 
   async function handleProfileUpdated(profile: FixedIdentityProfile) {
-    if (!session.auth) {
-      setSession({
-        userId: profile.userId,
-        auth: null,
-        profile,
-      });
-      return;
-    }
-
-    const nextSession = await persistSession(session.auth, profile);
-    setSession(nextSession);
+    setSession({
+      userId: session.userId ?? profile.userId,
+      profile,
+    });
   }
 
   async function handleLogout() {
-    setApiAuthToken(null);
     await clearPersistedSession();
     setRoute("dashboard");
     setSession(initialSessionState);
@@ -226,9 +226,7 @@ export function AppShell() {
           }}
         />
       ) : (
-        <LoginScreen
-          onLogin={(auth, profile) => void handleLogin(auth, profile)}
-        />
+        <LoginScreen onLogin={(profile) => void handleLogin(profile)} />
       )}
     </View>
   );
