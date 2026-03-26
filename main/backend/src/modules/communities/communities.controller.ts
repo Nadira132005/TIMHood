@@ -73,6 +73,54 @@ export const communitiesController = {
     return res.status(201).json(result);
   },
 
+  async createGroupEvent(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await communitiesService.createGroupEvent(userId, req.params.communityId, {
+      title: String(req.body?.title ?? ''),
+      description: typeof req.body?.description === 'string' ? req.body.description : undefined,
+      startAt: String(req.body?.startAt ?? ''),
+      endAt: String(req.body?.endAt ?? ''),
+      locationLabel: String(req.body?.locationLabel ?? ''),
+      location: req.body?.location,
+      targetGroupId: typeof req.body?.targetGroupId === 'string' ? req.body.targetGroupId : undefined
+    });
+    return res.status(201).json(result);
+  },
+
+  async approveGroupEvent(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await communitiesService.approveGroupEvent(userId, req.params.communityId, req.params.eventMessageId);
+    return res.status(200).json(result);
+  },
+
+  async rejectGroupEvent(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await communitiesService.rejectGroupEvent(userId, req.params.communityId, req.params.eventMessageId);
+    return res.status(200).json(result);
+  },
+
+  async toggleEventAttendance(req: Request, res: Response): Promise<Response> {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const result = await communitiesService.toggleEventAttendance(userId, req.params.communityId, req.params.eventMessageId);
+    return res.status(200).json(result);
+  },
+
   async createGroup(req: Request, res: Response): Promise<Response> {
     const userId = req.auth?.userId;
     if (!userId) {

@@ -131,11 +131,45 @@ interface ICommunityMessage {
   user_id: string;
   user_name: string;
   user_photo_base64?: string;
+  message_type: 'text' | 'event';
   text?: string;
   image_base64?: string;
+  approval_status?: 'pending' | 'approved' | 'rejected';
+  approved_by_user_id?: string;
+  approved_at?: Date;
+  event_thread_id?: string;
+  event_title?: string;
+  event_description?: string;
+  event_starts_at?: Date;
+  event_ends_at?: Date;
+  event_location_label?: string;
+  event_location_point?: GeoPoint;
+  attendees?: Array<{
+    user_id: string;
+    user_name: string;
+    user_photo_base64?: string;
+    responded_at: Date;
+  }>;
   created_at: Date;
   updated_at: Date;
 }
+
+const optionalPointSchema = new Schema<GeoPoint>(
+  {
+    type: { type: String, enum: ['Point'], required: true },
+    coordinates: {
+      type: [Number],
+      required: true,
+      validate: {
+        validator(value: number[]) {
+          return value.length === 2;
+        },
+        message: 'Coordinates must be [lng, lat]'
+      }
+    }
+  },
+  { _id: false }
+);
 
 const communitySchema = new Schema<ICommunity>(
   {
@@ -279,21 +313,7 @@ const communityAccessPolicySchema = new Schema<ICommunityAccessPolicy>(
       required: true
     },
     city_codes: { type: [String], default: undefined },
-    center_point: {
-      type: {
-        type: String,
-        enum: ['Point']
-      },
-      coordinates: {
-        type: [Number],
-        validate: {
-          validator(value: number[]) {
-            return !value || value.length === 2;
-          },
-          message: 'Coordinates must be [lng, lat]'
-        }
-      }
-    },
+    center_point: { type: optionalPointSchema, required: false },
     radius_km: { type: Number },
     polygon: { type: Schema.Types.Mixed },
     is_active: { type: Boolean, default: true, required: true }
@@ -330,13 +350,39 @@ const communityMessageSchema = new Schema<ICommunityMessage>(
     user_id: { type: String, required: true, index: true },
     user_name: { type: String, required: true },
     user_photo_base64: { type: String },
+    message_type: { type: String, enum: ['text', 'event'], default: 'text', required: true },
     text: { type: String },
-    image_base64: { type: String }
+    image_base64: { type: String },
+    approval_status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
+    approved_by_user_id: { type: String },
+    approved_at: { type: Date },
+    event_thread_id: { type: String, index: true },
+    event_title: { type: String },
+    event_description: { type: String },
+    event_starts_at: { type: Date },
+    event_ends_at: { type: Date },
+    event_location_label: { type: String },
+    event_location_point: { type: optionalPointSchema, required: false },
+    attendees: {
+      type: [
+        new Schema(
+          {
+            user_id: { type: String, required: true },
+            user_name: { type: String, required: true },
+            user_photo_base64: { type: String },
+            responded_at: { type: Date, required: true }
+          },
+          { _id: false }
+        )
+      ],
+      default: undefined
+    }
   },
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
 );
 
 communityMessageSchema.index({ community_id: 1, created_at: -1 });
+communityMessageSchema.index({ community_id: 1, message_type: 1, approval_status: 1, created_at: -1 });
 
 export const Community: Model<ICommunity> =
   (mongoose.models.Community as Model<ICommunity>) || mongoose.model<ICommunity>('Community', communitySchema);
