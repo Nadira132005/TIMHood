@@ -9,5 +9,6 @@ export const env = {
   mongodbUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/timhood',
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:8081',
   authTokenSecret: process.env.AUTH_TOKEN_SECRET || 'timhood-dev-secret',
-  authTokenTtlSeconds: Number(process.env.AUTH_TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30)
+  authTokenTtlSeconds: Number(process.env.AUTH_TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30),
+  cscaCertsPath: process.env.CSCA_CERTS_PATH || '',
 };

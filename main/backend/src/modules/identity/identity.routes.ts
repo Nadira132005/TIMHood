@@ -8,6 +8,10 @@ import { identityController } from "./identity.controller";
 export const identityRouter = Router();
 
 identityRouter.post(
+  "/nfc-challenge",
+  asyncHandler(identityController.createNfcChallenge),
+);
+identityRouter.post(
   "/demo-login",
   asyncHandler(identityController.loginWithDemoCan),
 );

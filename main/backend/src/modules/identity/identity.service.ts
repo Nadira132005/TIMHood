@@ -13,16 +13,11 @@ import { FriendRequest } from "../social/social.model";
 import { User, UserLocation } from "./identity.model";
 import { resolveNeighborhood } from "./neighborhood-resolver";
 import { createAuthToken } from "../../shared/utils/auth-token";
+import { NfcEvidencePayload, nfcVerifier } from "./nfc-verifier";
 
 type NfcLoginPayload = {
-  documentNumber: string;
-  firstName: string;
-  lastName: string;
-  nationality: string;
-  dateOfBirth: string;
-  dateOfExpiry: string;
-  issuingState?: string;
-  photoBase64?: string;
+  challengeId: string;
+  evidence: NfcEvidencePayload;
 };
 
 type ProofStatusResponse = {
@@ -323,6 +318,10 @@ const DEMO_USERS: Record<
 };
 
 export const identityService = {
+  issueNfcChallenge() {
+    return nfcVerifier.issueChallenge();
+  },
+
   async loginWithDemoCan(payload: DemoLoginPayload): Promise<NfcLoginResponse> {
     const can = payload.can.trim();
     const demoUser = DEMO_USERS[can];
@@ -404,26 +403,28 @@ export const identityService = {
   },
 
   async loginWithNfc(payload: NfcLoginPayload): Promise<NfcLoginResponse> {
-    const documentNumber = payload.documentNumber.trim().toUpperCase();
-    const firstName = normalizeName(payload.firstName);
-    const lastName = normalizeName(payload.lastName);
-    const nationality = payload.nationality.trim().toUpperCase();
-    const issuingState =
-      payload.issuingState?.trim().toUpperCase() || undefined;
-
-    if (!documentNumber) {
-      throw new HttpError(400, "documentNumber is required");
+    const challengeId = String(payload.challengeId ?? "").trim();
+    if (!challengeId) {
+      throw new HttpError(400, "challengeId is required");
     }
 
-    if (!firstName || !lastName || !nationality) {
-      throw new HttpError(
-        400,
-        "firstName, lastName, and nationality are required",
-      );
+    if (!payload.evidence) {
+      throw new HttpError(400, "evidence is required");
     }
 
-    const dateOfBirth = parseMrzDate(payload.dateOfBirth, "dateOfBirth");
-    const dateOfExpiry = parseMrzDate(payload.dateOfExpiry, "dateOfExpiry");
+    const challengeBase64 = nfcVerifier.consumeChallenge(challengeId);
+    const verified = await nfcVerifier.verifyEvidence({
+      challengeBase64,
+      evidence: payload.evidence,
+    });
+
+    const documentNumber = verified.documentNumber.trim().toUpperCase();
+    const firstName = normalizeName(verified.firstName);
+    const lastName = normalizeName(verified.lastName);
+    const nationality = verified.nationality.trim().toUpperCase();
+    const issuingState = verified.issuingState?.trim().toUpperCase() || undefined;
+    const dateOfBirth = parseMrzDate(verified.dateOfBirth, "dateOfBirth");
+    const dateOfExpiry = parseMrzDate(verified.dateOfExpiry, "dateOfExpiry");
     if (dateOfExpiry.getTime() < Date.now()) {
       throw new HttpError(400, "Document is expired");
     }
@@ -432,7 +433,7 @@ export const identityService = {
     const fullName = `${firstName} ${lastName}`.trim();
     const documentNumberHash = hashDocumentNumber(documentNumber);
     const documentNumberEncoded = encodeDocumentNumber(documentNumber);
-    const verifiedPhotoBase64 = payload.photoBase64?.trim() || undefined;
+    const verifiedPhotoBase64 = verified.photoBase64?.trim() || undefined;
     const avatarPhotoBase64 = buildInitialsAvatar(fullName);
     const duplicateWithDifferentId = await User.findOne({
       document_number: documentNumber,

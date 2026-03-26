@@ -32,6 +32,9 @@ coverage/
 .bundle/
 vendor/bundle/
 
+timhood-backend.pem
+backup/
+
 # React Native / Android
 android/.gradle/
 android/app/build/
@@ -50,5 +53,3 @@ local.properties
 # Local workspace files
 .README
 **/.README
-
-android/

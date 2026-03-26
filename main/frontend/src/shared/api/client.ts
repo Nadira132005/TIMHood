@@ -1,6 +1,8 @@
-const getApiBaseUrl = () => {
-  return "https://9f47-89-123-41-212.ngrok-free.app/api";
+export const getApiBaseUrl = () => {
+  return "http://13.51.178.7/api";
 };
+
+export const getServerBaseUrl = () => getApiBaseUrl().replace(/\/api\/?$/, "");
 
 type AuthHeadersOptions = {
   userId?: string;

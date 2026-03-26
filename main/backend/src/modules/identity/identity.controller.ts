@@ -3,6 +3,10 @@ import { Request, Response } from "express";
 import { identityService } from "./identity.service";
 
 export const identityController = {
+  async createNfcChallenge(_req: Request, res: Response): Promise<Response> {
+    return res.status(200).json(identityService.issueNfcChallenge());
+  },
+
   async loginWithDemoCan(req: Request, res: Response): Promise<Response> {
     const result = await identityService.loginWithDemoCan({
       can: String(req.body?.can ?? ""),
@@ -13,14 +17,8 @@ export const identityController = {
 
   async loginWithNfc(req: Request, res: Response): Promise<Response> {
     const result = await identityService.loginWithNfc({
-      documentNumber: req.body?.documentNumber,
-      firstName: req.body?.firstName,
-      lastName: req.body?.lastName,
-      nationality: req.body?.nationality,
-      dateOfBirth: req.body?.dateOfBirth,
-      dateOfExpiry: req.body?.dateOfExpiry,
-      issuingState: req.body?.issuingState,
-      photoBase64: req.body?.photoBase64,
+      challengeId: req.body?.challengeId,
+      evidence: req.body?.evidence,
     });
 
     return res.status(200).json(result);

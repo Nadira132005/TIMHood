@@ -2,7 +2,6 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import path from 'path';
 
 import { env } from './config/env';
 import { apiRouter } from './modules';
@@ -21,8 +20,9 @@ export function buildApp() {
     res.status(200).json({ status: 'ok' });
   });
 
-  app.get('/assets/map.png', (_req, res) => {
-    res.sendFile(path.resolve(__dirname, '../../map.png'));
+  app.post('/show-errors', (req, res) => {
+    console.error('Frontend error report:', req.body);
+    res.status(204).send();
   });
 
   app.use('/api', apiRouter);
